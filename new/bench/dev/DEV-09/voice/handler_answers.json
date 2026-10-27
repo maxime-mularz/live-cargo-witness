@@ -1,0 +1,15 @@
+[
+  {
+    "id": "H1",
+    "start": "2026-10-10T18:40:00Z",
+    "end": "2026-10-10T19:20:00Z",
+    "answer": "We had to wait for the forklift; the crates stayed outside the warehouse for about 20 minutes.",
+    "audio": null
+  },
+  {
+    "id": "H0",
+    "default": true,
+    "answer": "I have no information about that period.",
+    "audio": null
+  }
+]

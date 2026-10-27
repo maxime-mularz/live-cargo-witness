@@ -1,0 +1,17 @@
+id: R03
+title: The head count matches across the air waybill, the certification and the loading list
+title_fr: Le nombre de têtes est identique sur la LTA, la certification et la liste de chargement
+phase: pre_departure
+check:
+  type: fields_equal
+  fields:
+    - {document: awb, field: head_count}
+    - {document: certification, field: head_count}
+    - {document: loading_list, field: head_count}
+threshold: null
+source:
+  kind: carrier_procedure
+  note: Consistency of the shipping documents for the same consignment.
+evidence_expected: The three values read, each with its image region.
+action: block
+status: active

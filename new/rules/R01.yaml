@@ -1,0 +1,17 @@
+id: R01
+title: The air waybill carries the AVI special handling code
+title_fr: Le code de manutention AVI figure sur la LTA
+phase: pre_departure
+check:
+  type: field_contains
+  document: awb
+  field: handling_codes
+  value: AVI
+threshold: null
+source:
+  kind: lar_reference
+  lar_section: "to be completed (section number only, no text)"
+  note: Carrier acceptance procedure for live animals.
+evidence_expected: Field read on the air waybill, with the image region that shows it.
+action: block
+status: active

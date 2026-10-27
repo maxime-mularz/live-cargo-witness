@@ -1,0 +1,107 @@
+{
+  "document": "awb",
+  "synthetic": true,
+  "fields": {
+    "awb_number": {
+      "value": "000-31823013",
+      "bbox": [
+        360,
+        151,
+        554,
+        169
+      ]
+    },
+    "shipper": {
+      "value": "Fictitious Genetics Ltd",
+      "bbox": [
+        360,
+        221,
+        664,
+        239
+      ]
+    },
+    "consignee": {
+      "value": "Fictitious Farms Co.",
+      "bbox": [
+        360,
+        291,
+        628,
+        309
+      ]
+    },
+    "route": {
+      "value": [
+        "ORI",
+        "STO",
+        "DES"
+      ],
+      "bbox": [
+        360,
+        361,
+        589,
+        379
+      ]
+    },
+    "flights": {
+      "value": [
+        "LCW101",
+        "LCW202"
+      ],
+      "bbox": [
+        360,
+        431,
+        799,
+        451
+      ]
+    },
+    "date": {
+      "value": "2026-10-18",
+      "bbox": null
+    },
+    "nature_of_goods": {
+      "value": "Live animals — heifers",
+      "bbox": [
+        360,
+        501,
+        664,
+        519
+      ]
+    },
+    "head_count": {
+      "value": 9,
+      "bbox": [
+        360,
+        571,
+        377,
+        589
+      ]
+    },
+    "handling_codes": {
+      "value": [
+        "AVI"
+      ],
+      "bbox": [
+        360,
+        641,
+        404,
+        659
+      ]
+    },
+    "handling_information": {
+      "value": "Keep between 10 °C and 24 °C",
+      "bbox": [
+        360,
+        711,
+        771,
+        734
+      ]
+    },
+    "temperature_range_c": {
+      "value": [
+        10.0,
+        24.0
+      ],
+      "bbox": null
+    }
+  }
+}

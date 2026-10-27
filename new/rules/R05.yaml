@@ -1,0 +1,14 @@
+id: R05
+title: Orientation arrows are present on every crate and point up
+title_fr: Les flèches d'orientation sont présentes et dans le bon sens
+phase: pre_departure
+check:
+  type: crate_arrows_up
+threshold: null
+source:
+  kind: lar_reference
+  lar_section: "to be completed (section number only, no text)"
+  note: Marking and labelling of live-animal containers.
+evidence_expected: SAM 3.1 mask of the arrows and their detected direction on each crate photo.
+action: block
+status: active

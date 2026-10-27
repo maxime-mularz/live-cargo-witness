@@ -1,0 +1,15 @@
+id: R06
+title: The air waybill number written on every crate is the one on the air waybill
+title_fr: Le n° de LTA inscrit sur chaque caisse est celui de la LTA
+phase: pre_departure
+check:
+  type: crate_awb_matches
+  document: awb
+  field: awb_number
+threshold: null
+source:
+  kind: carrier_procedure
+  note: Each package must be traceable to its air waybill.
+evidence_expected: Number read on each crate photo, compared with the air waybill.
+action: block
+status: active

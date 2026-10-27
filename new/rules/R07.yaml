@@ -1,0 +1,17 @@
+id: R07
+title: Temperature stays within the declared range during ground phases
+title_fr: La température reste dans la plage déclarée pendant les phases au sol
+phase: investigation
+check:
+  type: series_within_range
+  series: temperature_c
+  phases: [ground_departure, stopover, ground_arrival]
+threshold:
+  from: dossier
+  path: declared.temperature_range_c
+source:
+  kind: dossier
+  note: Range declared on the shipping documents and recorded in the entry record.
+evidence_expected: Time-stamped curve segment outside the range, with its phase.
+action: flag
+status: active

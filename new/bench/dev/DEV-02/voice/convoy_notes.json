@@ -1,0 +1,20 @@
+[
+  {
+    "id": "N1",
+    "time": "2026-10-03T08:05:00Z",
+    "text": "Loading complete, all crates secured and strapped.",
+    "audio": null
+  },
+  {
+    "id": "N2",
+    "time": "2026-10-03T14:00:00Z",
+    "text": "Stopover: no handling of the crates, everything quiet.",
+    "audio": null
+  },
+  {
+    "id": "N3",
+    "time": "2026-10-03T20:05:00Z",
+    "text": "Arrival: crates handed over to the consignee's team.",
+    "audio": null
+  }
+]

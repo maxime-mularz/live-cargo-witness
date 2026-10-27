@@ -1,0 +1,17 @@
+id: R09
+title: No shock above the sensor alert level outside takeoff and landing
+title_fr: Aucun choc au-delà du seuil d'alerte hors décollage et atterrissage
+phase: investigation
+check:
+  type: series_below
+  series: shock_g
+  exclude_phases: [takeoff, landing]
+threshold:
+  from: dossier
+  path: sensor.shock_alert_g
+source:
+  kind: dossier
+  note: Shock alert level configured on the sensor, recorded in the entry record.
+evidence_expected: Time-stamped acceleration peak, with its phase.
+action: flag
+status: active

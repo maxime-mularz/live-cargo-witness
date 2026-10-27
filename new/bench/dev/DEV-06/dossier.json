@@ -1,0 +1,54 @@
+{
+  "id": "DEV-06",
+  "synthetic": true,
+  "notice": "FICTITIOUS DOSSIER generated for testing Live Cargo Witness. No real shipper, carrier, handler or shipment. All values are illustrative.",
+  "route": {
+    "origin": "ORI",
+    "stopover": "STO",
+    "destination": "DES"
+  },
+  "awb_number_declared": "000-62942283",
+  "schedule": {
+    "loading_start": "2026-10-07T07:30:00Z",
+    "takeoff_1": "2026-10-07T09:30:00Z",
+    "landing_1": "2026-10-07T12:55:00Z",
+    "takeoff_2": "2026-10-07T14:55:00Z",
+    "landing_2": "2026-10-07T19:25:00Z",
+    "unloading_end": "2026-10-07T20:55:00Z"
+  },
+  "phase_model": {
+    "mode": "schedule",
+    "takeoff_window_min": 20,
+    "landing_window_min": 20,
+    "source": "Marfik configuration parameter (to be validated); used when the sensor does not measure pressure, acceleration or position"
+  },
+  "declared": {
+    "species": "Heifers",
+    "temperature_range_c": [
+      10.0,
+      24.0
+    ],
+    "temperature_range_source": "documents/awb.png, field handling_information",
+    "inspection_windows": []
+  },
+  "sensor": {
+    "model": "synthetic",
+    "sampling_minutes": 5,
+    "shock_alert_g": 3.0,
+    "light_alert_lux": 50.0,
+    "thresholds_source": "Alert levels configured on the sensor (fictitious values)."
+  },
+  "documents": {
+    "awb": "documents/awb.png",
+    "certification": "documents/certification.png",
+    "loading_list": "documents/loading_list.png"
+  },
+  "photos": [
+    "photos/crate_01.png",
+    "photos/crate_02.png",
+    "photos/crate_03.png"
+  ],
+  "sensor_curve": "sensor/curve.csv",
+  "voice_notes": "voice/convoy_notes.json",
+  "handler_answers": "voice/handler_answers.json"
+}

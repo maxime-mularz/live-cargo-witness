@@ -1,0 +1,21 @@
+{
+  "dossier_id": "DEV-14",
+  "category": "indeterminate",
+  "synthetic": true,
+  "phase1": {
+    "decision": "go",
+    "violated_rules": []
+  },
+  "investigation": {
+    "handler_call_expected": true,
+    "deviations": [
+      {
+        "rule": "R07",
+        "start": "2026-10-15T19:20:00Z",
+        "end": "2026-10-15T19:50:00Z",
+        "phase": "ground_arrival",
+        "status": "indeterminate"
+      }
+    ]
+  }
+}

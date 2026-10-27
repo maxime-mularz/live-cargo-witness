@@ -1,0 +1,15 @@
+id: R04
+title: Every crate carries a "Live Animals" label
+title_fr: Chaque caisse porte l'étiquette « Live Animals »
+phase: pre_departure
+check:
+  type: crate_feature_present
+  feature: live_animals_label
+threshold: null
+source:
+  kind: lar_reference
+  lar_section: "to be completed (section number only, no text)"
+  note: Marking and labelling of live-animal containers.
+evidence_expected: SAM 3.1 mask of the label on each crate photo.
+action: block
+status: active

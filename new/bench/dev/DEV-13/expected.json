@@ -1,0 +1,13 @@
+{
+  "dossier_id": "DEV-13",
+  "category": "compliant",
+  "synthetic": true,
+  "phase1": {
+    "decision": "go",
+    "violated_rules": []
+  },
+  "investigation": {
+    "handler_call_expected": false,
+    "deviations": []
+  }
+}

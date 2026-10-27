@@ -1,0 +1,35 @@
+{
+  "photo": "crate_02",
+  "synthetic": true,
+  "features": {
+    "live_animals_label": {
+      "present": true,
+      "bbox": [
+        150,
+        180,
+        450,
+        280
+      ]
+    },
+    "orientation_arrows": {
+      "present": true,
+      "direction": "down",
+      "bbox": [
+        550,
+        170,
+        740,
+        330
+      ]
+    },
+    "awb_number": {
+      "value": "000-71717240",
+      "bbox": [
+        150,
+        400,
+        590,
+        470
+      ]
+    }
+  },
+  "note": "bboxes given before a rotation of -2 degrees"
+}

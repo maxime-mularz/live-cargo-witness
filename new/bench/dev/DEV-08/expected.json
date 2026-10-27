@@ -1,0 +1,12 @@
+{
+  "dossier_id": "DEV-08",
+  "category": "defect_R05",
+  "synthetic": true,
+  "phase1": {
+    "decision": "block",
+    "violated_rules": [
+      "R05"
+    ]
+  },
+  "investigation": null
+}

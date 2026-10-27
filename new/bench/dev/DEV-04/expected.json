@@ -1,0 +1,21 @@
+{
+  "dossier_id": "DEV-04",
+  "category": "explained_by_note",
+  "synthetic": true,
+  "phase1": {
+    "decision": "go",
+    "violated_rules": []
+  },
+  "investigation": {
+    "handler_call_expected": false,
+    "deviations": [
+      {
+        "rule": "R07",
+        "start": "2026-10-05T07:55:00Z",
+        "end": "2026-10-05T08:20:00Z",
+        "phase": "ground_departure",
+        "status": "explained_rule_exceeded"
+      }
+    ]
+  }
+}

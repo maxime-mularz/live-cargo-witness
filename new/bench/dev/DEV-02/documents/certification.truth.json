@@ -1,0 +1,64 @@
+{
+  "document": "certification",
+  "synthetic": true,
+  "fields": {
+    "awb_number": {
+      "value": "000-99532510",
+      "bbox": [
+        360,
+        151,
+        554,
+        169
+      ]
+    },
+    "species": {
+      "value": "Heifers",
+      "bbox": [
+        360,
+        221,
+        457,
+        239
+      ]
+    },
+    "head_count": {
+      "value": 15,
+      "bbox": [
+        360,
+        291,
+        393,
+        309
+      ]
+    },
+    "shipper": {
+      "value": "Fictitious Genetics Ltd",
+      "bbox": [
+        360,
+        361,
+        664,
+        379
+      ]
+    },
+    "date": {
+      "value": "2026-10-03",
+      "bbox": [
+        360,
+        431,
+        514,
+        449
+      ]
+    },
+    "signed": {
+      "value": true,
+      "bbox": [
+        360,
+        500,
+        760,
+        620
+      ]
+    },
+    "signatory": {
+      "value": "A. Example (fictitious)",
+      "bbox": null
+    }
+  }
+}

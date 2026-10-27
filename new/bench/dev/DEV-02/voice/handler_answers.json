@@ -1,0 +1,15 @@
+[
+  {
+    "id": "H1",
+    "start": "2026-10-03T13:05:00Z",
+    "end": "2026-10-03T13:50:00Z",
+    "answer": "The crate was moved out to the apron during the pallet reconfiguration, about 25 minutes, then loaded back.",
+    "audio": null
+  },
+  {
+    "id": "H0",
+    "default": true,
+    "answer": "I have no information about that period.",
+    "audio": null
+  }
+]

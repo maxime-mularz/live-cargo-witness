@@ -1,0 +1,15 @@
+[
+  {
+    "id": "H1",
+    "start": "2026-10-19T12:15:00Z",
+    "end": "2026-10-19T13:05:00Z",
+    "answer": "I was not on shift at that time, I cannot say what happened.",
+    "audio": null
+  },
+  {
+    "id": "H0",
+    "default": true,
+    "answer": "I have no information about that period.",
+    "audio": null
+  }
+]

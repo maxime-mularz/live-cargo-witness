@@ -1,0 +1,20 @@
+[
+  {
+    "id": "N1",
+    "time": "2026-10-05T07:40:00Z",
+    "text": "Loading complete, all crates secured and strapped.",
+    "audio": null
+  },
+  {
+    "id": "N2",
+    "time": "2026-10-05T08:00:00Z",
+    "text": "Departure: auxiliary power off during loading delay, hold getting warm for about 25 minutes.",
+    "audio": null
+  },
+  {
+    "id": "N3",
+    "time": "2026-10-05T19:10:00Z",
+    "text": "Arrival: crates handed over to the consignee's team.",
+    "audio": null
+  }
+]

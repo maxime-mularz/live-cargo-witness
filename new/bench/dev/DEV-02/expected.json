@@ -1,0 +1,35 @@
+{
+  "dossier_id": "DEV-02",
+  "category": "explained_by_handler",
+  "synthetic": true,
+  "phase1": {
+    "decision": "go",
+    "violated_rules": []
+  },
+  "investigation": {
+    "handler_call_expected": true,
+    "deviations": [
+      {
+        "rule": "R07",
+        "start": "2026-10-03T13:15:00Z",
+        "end": "2026-10-03T13:40:00Z",
+        "phase": "stopover",
+        "status": "explained_rule_exceeded"
+      },
+      {
+        "rule": "R09",
+        "start": "2026-10-03T13:15:00Z",
+        "end": "2026-10-03T13:15:00Z",
+        "phase": "stopover",
+        "status": "explained_rule_exceeded"
+      },
+      {
+        "rule": "R10",
+        "start": "2026-10-03T13:15:00Z",
+        "end": "2026-10-03T13:40:00Z",
+        "phase": "stopover",
+        "status": "explained_rule_exceeded"
+      }
+    ]
+  }
+}

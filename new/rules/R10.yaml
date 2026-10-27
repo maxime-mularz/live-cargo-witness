@@ -1,0 +1,18 @@
+id: R10
+title: No light exposure above the sensor alert level
+title_fr: Aucune exposition à la lumière au-delà du seuil d'alerte
+phase: investigation
+check:
+  type: series_below
+  series: light_lux
+threshold:
+  from: dossier
+  path: sensor.light_alert_lux
+source:
+  kind: dossier
+  note: >-
+    Light alert level configured on the sensor, recorded in the entry record. A peak inside an
+    inspection window declared in the entry record is a false positive for the agent to dismiss.
+evidence_expected: Time-stamped light peak, with its phase.
+action: flag
+status: active

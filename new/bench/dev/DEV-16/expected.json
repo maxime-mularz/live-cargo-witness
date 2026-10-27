@@ -1,0 +1,21 @@
+{
+  "dossier_id": "DEV-16",
+  "category": "false_positive",
+  "synthetic": true,
+  "phase1": {
+    "decision": "go",
+    "violated_rules": []
+  },
+  "investigation": {
+    "handler_call_expected": false,
+    "deviations": [
+      {
+        "rule": "R10",
+        "start": "2026-10-17T08:30:00Z",
+        "end": "2026-10-17T08:40:00Z",
+        "phase": "ground_departure",
+        "status": "false_positive_dismissed"
+      }
+    ]
+  }
+}

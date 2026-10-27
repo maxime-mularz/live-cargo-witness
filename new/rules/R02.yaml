@@ -1,0 +1,16 @@
+id: R02
+title: The Shipper's Certification for Live Animals is present and signed
+title_fr: La Shipper's Certification est présente et signée
+phase: pre_departure
+check:
+  type: field_true
+  document: certification
+  field: signed
+threshold: null
+source:
+  kind: lar_reference
+  lar_section: "to be completed (section number only, no text)"
+  note: Carrier acceptance procedure for live animals.
+evidence_expected: Signature area read on the certification, with its image region.
+action: block
+status: active

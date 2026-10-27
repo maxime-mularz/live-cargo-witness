@@ -1,0 +1,15 @@
+[
+  {
+    "id": "H1",
+    "start": "2026-10-16T12:40:00Z",
+    "end": "2026-10-16T13:20:00Z",
+    "answer": "The crate was taken off the aircraft to make room for another pallet, about 20 minutes on the apron.",
+    "audio": null
+  },
+  {
+    "id": "H0",
+    "default": true,
+    "answer": "I have no information about that period.",
+    "audio": null
+  }
+]

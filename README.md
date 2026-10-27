@@ -1,2 +1,84 @@
-# live-cargo-witness
-Black-box investigator agent for live animal air cargo — Meta AI Hackathon 2026
+# Live Cargo Witness
+
+**The black box for live animals in the cargo hold.**
+An investigator agent that checks the paperwork before takeoff, reconstructs the flight after
+landing, asks the ground crew when a deviation has no explanation, and produces a handover record
+signed by the shipper, the carrier and the ground handler.
+
+Built for the Meta Global AI Developer Hackathon (Oct 27 – Nov 4, 2026), Startups track, by
+Marfik Group. Built for live-animal shipments subject to the IATA Live Animals Regulations; not
+affiliated with or endorsed by IATA.
+
+> **Status: work in progress (day 1).** The deterministic core and the evaluation bench are in
+> place and tested offline. The Meta model integrations and the agent loop are being wired next.
+
+## Why
+
+Livestock flies in the dark, with no connection. When something goes wrong between loading and
+arrival, nobody can say what happened, and the paperwork is reconstructed hours later, if at all.
+Live Cargo Witness does nothing in flight: like an accident investigator reading the flight
+recorders, it works at the first network contact, from the sensor log, the convoy attendant's
+voice notes and the ground crew's answers.
+
+## How it works
+
+1. **Before departure** — reads the air waybill, the Shipper's Certification and the loading list,
+   segments every crate photo, and gives a go or a block, each citing a rule card and its evidence.
+2. **In flight** — nothing. The sensor records locally; the attendant may dictate notes.
+3. **At first contact** — cuts the sensor log into flight phases, finds deviations from the rule
+   cards, matches them with the notes, and decides on its own when to ask the ground handler.
+   Each deviation ends up explained, dismissed as a false positive, or **indeterminate** — the
+   agent is allowed to say it does not know.
+4. **Handover record** — every statement goes through a **non-AI verifier** that rejects any claim
+   without a rule and a piece of evidence, and any number, time or date that the evidence does not
+   contain. The record is hashed (SHA-256) so anyone can check it was not altered.
+
+## Meta models
+
+| Model | Role |
+| --- | --- |
+| Muse Spark Open (Baseten, open weights) | Orchestrates the tools; reads document images |
+| SAM 3.1 | Segments crate photos: label, orientation arrows, air waybill plate |
+| Muse Voice Transcribe | Convoy attendant notes and ground handler answers |
+| Muse Spark | Writes the handover record text (English) |
+
+## Built during the hackathon
+
+Everything under [`new/`](new/) was written during the event (see the dated git history).
+
+| Part | File | Status |
+| --- | --- | --- |
+| 10 rule cards, no hard-coded thresholds, no LAR text | `new/rules/` | done |
+| Synthetic dossier generator (documents, crates, sensor curves, notes, answers) | `new/lcw/synth.py` | done |
+| Development bench: 20 fictitious dossiers + expected outcomes | `new/bench/dev/` | done |
+| Flight phases, deviation detection | `new/lcw/phases.py`, `new/lcw/deviations.py` | done |
+| Non-AI verifier | `new/lcw/verifier.py` | done |
+| Handover record + SHA-256 manifest | `new/lcw/casefile.py` | done |
+| Bench scoring | `new/lcw/score.py` | done |
+| Meta model adapters | `new/lcw/models.py` | in progress |
+| Agent loop and investigation journal page | `new/lcw/agent.py` | in progress |
+| Reserved bench (5 hand-written dossiers, sealed before the code freeze) | `new/bench/reserved/` | in progress |
+
+## Evaluation
+
+Two scores will be published side by side: the development bench (20 generated dossiers) and a
+reserved bench (5 dossiers written by hand by someone who never saw the generator, sealed by a
+hash committed before the code freeze and run once). Until the agent is wired, the only score
+here is a plumbing check of the scoring code itself.
+
+All data in this repository is **fictitious and labelled SYNTHETIC**. No real shipment, client,
+document or photo is used.
+
+## Run it
+
+```bash
+pip install -r requirements.txt
+python -m pytest new/tests -q
+python new/scripts/generate_bench.py
+python new/scripts/score_bench.py new/bench/dev new/results/dev
+python new/scripts/verify_case.py <case_dir>
+```
+
+## License
+
+To be decided before submission.
