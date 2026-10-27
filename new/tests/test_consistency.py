@@ -81,6 +81,13 @@ def test_statement_checks_are_told_to_the_model():
         assert phrase in " ".join(prompts.COMMON.split()), f"verifier check not explained to the model: {phrase}"
 
 
+def test_unreadable_readings_are_explained_to_the_model():
+    # Live DEMO-02 (night run 2026-10-27): an empty loading list led to 4 rejected "violated" claims.
+    text = " ".join(prompts.PRE_DEPARTURE.split())
+    assert "call read_document once more" in text  # an all-null reading is often a one-off
+    assert "never claim \"violated\" for a rule you could not check" in text  # verifier: 'unreadable'
+
+
 def test_format_md_documents_every_dossier_field():
     record = load_json(dossier_dirs()[0] / "dossier.json")
     for key, value in record.items():

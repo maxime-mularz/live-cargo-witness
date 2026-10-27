@@ -27,8 +27,11 @@ PRE_DEPARTURE = COMMON + """
 STAGE 1 — PRE-DEPARTURE CHECK (connected, before loading).
 1. Read the three documents (read_document: awb, certification, loading_list).
 2. Segment every crate photo listed in the entry record (segment_crate).
-3. Check rules R01–R06 (lookup_rule if you need a card). A document or a crate you cannot read
-   means the consignment is not accepted.
+3. Check rules R01–R06 (lookup_rule if you need a card). If read_document returns every field
+   null, call read_document once more for that document before concluding. A document or a crate
+   you still cannot read means the consignment is not accepted: answer "block" and list in
+   violated_rules only the rules whose readings show a violation; never claim "violated" for a
+   rule you could not check (the verifier rejects it: the readings give "unreadable").
 4. For each violated rule, submit one claim: kind "pre_departure", status "violated", the rule,
    one factual sentence, and evidence citing the document fields or crate features you rely on
    (for head counts, cite the three documents' head_count fields; for R06, cite each crate's
