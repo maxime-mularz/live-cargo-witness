@@ -41,6 +41,7 @@ new/
   bench/FORMAT.md complete dossier format (write real or test dossiers from it)
   bench/reserved/ 5 independent dossiers, encrypted until the freeze (see rule 9)
   scripts/        CLI entry points
+  notes/          session reports (night runs), development scores only
   tests/          pytest suite, offline
 ```
 
@@ -122,6 +123,10 @@ nothing about the agent. Never publish a dry-run score.
   `pytest`, an independent review for `verifier.py`, `agent.py`, `tools.py`, `casefile.py`.
 - `lcw-consistency` — the map of what must change together (tools, statuses, evidence types, rule
   cards, prompts, FORMAT.md, this file, README). `new/tests/test_consistency.py` enforces most of it.
+- `lcw-night-run` — unattended live session on the keyed machine: run demo and dev benches, fix,
+  re-run, write `new/notes/night-<date>.md`. Budget cap and forbidden actions are in the skill.
+- `.claude/settings.json` — project permissions: `.env` unreadable, no unseal, no force push,
+  `expected.json` and the reserved bench not editable.
 - `lcw-release-check` — before every push: `python new/scripts/check_release.py`. Private names
   (real shippers, carriers, handlers) are listed in the git-ignored `.private-names`, one per line;
   create it on each machine, never commit it.
