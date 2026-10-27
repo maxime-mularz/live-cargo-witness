@@ -61,14 +61,19 @@ Everything under [`new/`](new/) was written during the event (see the dated git 
 | Bench scoring | `new/lcw/score.py` | done |
 | Meta model adapters | `new/lcw/models.py` | in progress |
 | Agent loop and investigation journal page | `new/lcw/agent.py` | in progress |
-| Reserved bench (5 hand-written dossiers, sealed before the code freeze) | `new/bench/reserved/` | in progress |
+| Dossier format specification | `new/bench/FORMAT.md` | done |
+| Reserved bench (5 independent dossiers, encrypted until the code freeze) | `new/bench/reserved.*` | in progress |
 
 ## Evaluation
 
-Two scores will be published side by side: the development bench (20 generated dossiers) and a
-reserved bench (5 dossiers written by hand by someone who never saw the generator, sealed by a
-hash committed before the code freeze and run once). Until the agent is wired, the only score
-here is a plumbing check of the scoring code itself.
+Two scores will be published side by side:
+- the **development bench**: 20 generated dossiers, the ones the agent was tuned on;
+- the **reserved bench**: 5 dossiers written by an independent agent instance that was given only
+  the [dossier format](new/bench/FORMAT.md) and the rule cards. They are committed encrypted, with a
+  seal (SHA-256) published before the code freeze, decrypted once after the freeze, and their
+  score is published as is.
+
+Until the agent is wired, the only score here is a plumbing check of the scoring code itself.
 
 All data in this repository is **fictitious and labelled SYNTHETIC**. No real shipment, client,
 document or photo is used.

@@ -23,9 +23,12 @@ The full spec (in French) lives outside the repo; this file is the part a coding
    specialist", "certified" or "approved", never the IATA logo, never text copied from the LAR.
 8. **Synthetic data is labelled.** Synthetic curves carry `synthetic: true` in their metadata and a
    `SYNTHETIC` banner wherever they are displayed.
-9. **The reserved bench is sealed.** `new/bench/reserved/` is written by hand by a team member who never saw the generator, and
-   sealed by a hash committed before the code freeze (Nov 3, 6 PM Paris). Never open, read, generate
-   or tune against it before the freeze. Never edit `expected.json` files to make a score go up.
+9. **The reserved bench is sealed.** Five dossiers written by an independent agent instance that only
+   had `new/bench/FORMAT.md` and the rule cards — never the generator nor the development bench.
+   They are committed **encrypted** (`new/bench/reserved.tar.gz.enc`) with their seal
+   (`new/bench/reserved.seal`). Never decrypt, open or tune against them before the code freeze
+   (Nov 3, 6 PM Paris). After the freeze: `new/scripts/unseal_bench.py`, run once, publish the
+   score as is. Never edit `expected.json` files to make a score go up.
 
 ## Layout
 
@@ -34,7 +37,8 @@ new/
   lcw/            Python package (tools, verifier, case file, scoring)
   rules/          10 rule cards R01–R10 (YAML)
   bench/dev/      20 generated dossiers + expected.json (do not hand-edit; regenerate)
-  bench/reserved/ 5 hand-written dossiers (sealed, see rule 9)
+  bench/FORMAT.md complete dossier format (write real or test dossiers from it)
+  bench/reserved/ 5 independent dossiers, encrypted until the freeze (see rule 9)
   scripts/        CLI entry points
   tests/          pytest suite, offline
 ```
@@ -82,7 +86,7 @@ python -m pytest new/tests -q                       # full offline suite
 python new/scripts/generate_bench.py                # regenerate bench/dev (deterministic seeds)
 python new/scripts/score_bench.py new/bench/dev new/results/dev
 python new/scripts/verify_case.py <case_dir>        # recompute the PV hashes
-python new/scripts/seal_bench.py new/bench/reserved # print the seal of the reserved bench
+python new/scripts/unseal_bench.py                 # AFTER the freeze only: decrypt + check the seal
 ```
 
 ## Priorities if time runs short (cut in this order)

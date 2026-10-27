@@ -1,8 +1,13 @@
-# Reserved bench — sealed
+# Reserved bench — sealed until the code freeze
 
-Five dossiers written by hand by a team member who never had access to the generator.
-Their seal (SHA-256 of the folder, computed with `new/scripts/seal_bench.py`) is committed in
-`new/bench/reserved.seal` before the code freeze (Nov 3, 2026, 6 PM Paris time).
-They are run once, after the freeze, and their score is published as is.
+Five fictitious dossiers written by an independent agent instance that was given only
+[`../FORMAT.md`](../FORMAT.md) and the rule cards: it never saw the generator nor the development
+bench, and the people tuning the agent never saw its dossiers.
 
-Until the freeze, this folder holds only this README.
+Before the freeze, the repository holds only:
+- `new/bench/reserved.tar.gz.enc` — the dossiers, encrypted (AES-256-CBC, PBKDF2);
+- `new/bench/reserved.seal` — the SHA-256 seal of the plaintext dossiers.
+
+After the code freeze (Nov 3, 2026, 6 PM Paris time), the dossiers are decrypted into this folder
+with `new/scripts/unseal_bench.py`, the seal is checked, the agent runs on them **once**, and the
+score is published as is, next to the development score.

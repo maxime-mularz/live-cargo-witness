@@ -4,8 +4,8 @@ Usage:
   python new/scripts/seal_bench.py new/bench/reserved            # print the seal
   python new/scripts/seal_bench.py new/bench/reserved --check new/bench/reserved.seal
 
-The team member who wrote the dossiers commits the printed seal to new/bench/reserved.seal BEFORE the code freeze, from
-his own account. After the freeze, --check proves the dossiers were not changed since.
+The seal of the reserved bench is committed in new/bench/reserved.seal BEFORE the code freeze.
+After the freeze, --check (or unseal_bench.py) proves the dossiers were not changed since.
 README.md and .gitkeep are ignored.
 """
 import argparse
