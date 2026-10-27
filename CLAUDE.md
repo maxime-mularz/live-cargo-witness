@@ -53,15 +53,19 @@ Built offline (no network needed, fully tested):
 - `lcw/deviations.py` — deterministic deviation detection on a curve (EF-09).
 - `lcw/verifier.py` — non-AI verifier (EF-14).
 - `lcw/casefile.py`, `lcw/hashing.py` — shared handover record (PV) + SHA-256 manifest (EF-15/16).
+- `lcw/journal_page.py` — self-contained investigation journal page, written in every case (EF-13).
+- `lcw/agent.py`, `lcw/prompts.py` — the two-stage loop (pre-departure, investigation) and its prompts.
+- `lcw/runner.py` — runs the agent on a dossier or a bench, writes results, cases and raw runs.
 - `lcw/score.py` — bench scoring against `expected.json`.
 
 Left for the machine that holds the API keys (with Claude Code or Muse Code):
 - `lcw/models.py` — adapters for Muse Spark Open (Baseten), SAM 3.1, Muse Voice Transcribe,
-  Muse Spark (Meta Model API). The function signatures are fixed; the bodies raise
-  `NotImplementedError` until wired. Check each provider's docs for the request format — do not guess.
-  On Baseten the hackathon model id is `meta-models/muse-spark-open-1026`.
-- `lcw/agent.py` — the investigation loop (orchestrated by Muse Spark Open, tools below).
-- The journal web page (EF-13).
+  Muse Spark (Meta Model API). The function signatures and return shapes are fixed (see the
+  docstrings, in particular `chat`); the bodies raise `NotImplementedError` until wired. Check each
+  provider's docs for the request format — do not guess. On Baseten the hackathon model id is
+  `meta-models/muse-spark-open-1026`. Validate with `python new/scripts/test_ca02.py`.
+- Then: `python new/scripts/run_agent.py new/bench/dev/DEV-02` (scenario 2), then the whole bench.
+- Prompt tuning happens in `lcw/prompts.py`, on `bench/dev` only.
 
 ## Agent tools (contract)
 
@@ -83,11 +87,18 @@ must come from the real models; say so in the README.
 ```bash
 pip install -r requirements.txt
 python -m pytest new/tests -q                       # full offline suite
+python new/scripts/test_ca02.py                     # CA-02: tool calling + document reading (live)
+python new/scripts/run_agent.py new/bench/dev/DEV-02            # one dossier, live (keys in .env)
+python new/scripts/run_bench.py new/bench/dev                   # whole bench, live, then scored
+python new/scripts/run_bench.py new/bench/dev --dry-run         # plumbing check, no model
+python new/scripts/recording_list.py DEV-02 DEV-07  # sentences to record (voice/audio/<id>.m4a)
 python new/scripts/generate_bench.py                # regenerate bench/dev (deterministic seeds)
-python new/scripts/score_bench.py new/bench/dev new/results/dev
 python new/scripts/verify_case.py <case_dir>        # recompute the PV hashes
-python new/scripts/unseal_bench.py                 # AFTER the freeze only: decrypt + check the seal
+python new/scripts/unseal_bench.py                  # AFTER the freeze only: decrypt + check the seal
 ```
+
+`--dry-run` uses a scripted client that reads `expected.json`: it checks the plumbing and proves
+nothing about the agent. Never publish a dry-run score.
 
 ## Priorities if time runs short (cut in this order)
 

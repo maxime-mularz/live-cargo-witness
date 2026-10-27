@@ -5,6 +5,7 @@
     pv.md            the record, in English (French optional), with three signature lines
     pv.json          the same content, structured
     journal.json     every tool call of the run, with the model behind it
+    journal.html     the same journal as a self-contained page (EF-13)
     pieces/          copies of the dossier pieces the record relies on
     manifest.json    SHA-256 of every file above + the record's root hash
 
@@ -21,6 +22,7 @@ from pathlib import Path
 from .dossier import Dossier, write_json
 from .deviations import detect
 from .hashing import canonical_json, sha256_bytes, sha256_file
+from .journal_page import render as render_journal
 from .phases import segment
 from .predeparture import evaluate
 from .rules import Rule
@@ -176,6 +178,7 @@ def write_case(case_dir: Path | str, dossier: Dossier, rules: dict[str, Rule], c
     write_json(case_dir / "pv.json", pv)
     (case_dir / "pv.md").write_text(render_markdown(pv), encoding="utf-8")
     write_json(case_dir / "journal.json", journal)
+    (case_dir / "journal.html").write_text(render_journal(pv, journal), encoding="utf-8")
 
     files = {}
     for path in sorted(p for p in case_dir.rglob("*") if p.is_file()):

@@ -24,42 +24,88 @@ MODEL_FOR_TOOL = {
     "ask_handler": "Muse Voice Transcribe",
     "draft_notification": "template",
     "write_case_file": "lcw.verifier + lcw.casefile",
+    "convoy_notes": "Muse Voice Transcribe",
+}
+
+REASON = {"type": "string",
+          "description": "One sentence: why you call this tool now (your current hypothesis). "
+                         "Shown in the investigation journal."}
+
+EVIDENCE_ITEM = {
+    "type": "object", "required": ["type"],
+    "description": "One piece of evidence. Types: curve_segment {series, start, end}; "
+                   "dossier_field {path}; document_field {document, field}; "
+                   "crate_feature {photo, feature}; voice_note {id}; handler_answer {id}; "
+                   "inspection_window {id}.",
+    "properties": {
+        "type": {"type": "string", "enum": ["curve_segment", "dossier_field", "document_field",
+                                            "crate_feature", "voice_note", "handler_answer",
+                                            "inspection_window"]},
+        "series": {"type": "string", "enum": ["temperature_c", "light_lux", "shock_g"]},
+        "start": {"type": "string"}, "end": {"type": "string"},
+        "path": {"type": "string"}, "document": {"type": "string"}, "field": {"type": "string"},
+        "photo": {"type": "string"}, "feature": {"type": "string"}, "id": {"type": "string"},
+    },
+}
+
+CLAIM_ITEM = {
+    "type": "object", "required": ["id", "kind", "rule", "status", "statement", "evidence"],
+    "properties": {
+        "id": {"type": "string", "description": "C1, C2, ... (reuse an id to replace a rejected claim)"},
+        "kind": {"type": "string", "enum": ["pre_departure", "deviation"]},
+        "rule": {"type": "string", "description": "R01 to R10"},
+        "status": {"type": "string", "enum": ["violated", "satisfied", "explained_compliant",
+                                              "explained_rule_exceeded", "false_positive_dismissed",
+                                              "indeterminate"]},
+        "interval": {"type": "object", "properties": {"start": {"type": "string"},
+                                                       "end": {"type": "string"}},
+                     "description": "deviation claims only: start and end of the deviation"},
+        "statement": {"type": "string", "description": "One factual sentence. Every number, time and "
+                      "date in it must come from the cited evidence."},
+        "evidence": {"type": "array", "items": EVIDENCE_ITEM},
+    },
 }
 
 TOOL_SCHEMAS = [
     {"name": "read_document",
      "description": "Read a shipping document image and return its fields.",
      "parameters": {"type": "object", "required": ["document"], "properties": {
+         "reason": REASON,
          "document": {"type": "string", "enum": ["awb", "certification", "loading_list"]}}}},
     {"name": "segment_crate",
      "description": "Segment a crate photo: 'Live Animals' label, orientation arrows and their "
                     "direction, air waybill number plate.",
      "parameters": {"type": "object", "required": ["photo"], "properties": {
+         "reason": REASON,
          "photo": {"type": "string", "description": "e.g. crate_01"}}}},
     {"name": "get_sensor_curve",
      "description": "Flight phases and deviations from the rule cards on the sensor curve. "
                     "With start/end, also returns the raw samples of that interval.",
      "parameters": {"type": "object", "properties": {
+         "reason": REASON,
          "start": {"type": "string"}, "end": {"type": "string"}}}},
     {"name": "lookup_rule",
      "description": "Return a rule card (R01–R10) with its source.",
      "parameters": {"type": "object", "required": ["rule"], "properties": {
-         "rule": {"type": "string"}}}},
+         "reason": REASON, "rule": {"type": "string"}}}},
     {"name": "ask_handler",
      "description": "Ask the ground handler about an interval. Use only when a deviation has no "
                     "explanation in the convoy notes or the entry record.",
      "parameters": {"type": "object", "required": ["question", "start", "end"], "properties": {
+         "reason": REASON,
          "question": {"type": "string"}, "start": {"type": "string"}, "end": {"type": "string"}}}},
     {"name": "draft_notification",
      "description": "Draft (never send) a message to one of the three signatories.",
      "parameters": {"type": "object", "required": ["recipient", "summary"], "properties": {
+         "reason": REASON,
          "recipient": {"type": "string", "enum": ["shipper", "carrier", "handler"]},
          "summary": {"type": "string"}}}},
     {"name": "write_case_file",
      "description": "Submit claims for the shared handover record. Claims are checked by the "
                     "non-AI verifier; rejected claims come back with reasons.",
      "parameters": {"type": "object", "required": ["claims"], "properties": {
-         "claims": {"type": "array", "items": {"type": "object"}}}}},
+         "reason": REASON,
+         "claims": {"type": "array", "items": CLAIM_ITEM}}}},
 ]
 
 
@@ -79,13 +125,17 @@ class Toolset:
         }
         self.drafts: list[dict] = []
         self.accepted: list[dict] = []
+        self.stage: str | None = None     # set by the agent loop ("pre_departure" / "investigation")
+        self.reason: str | None = None    # the model's stated reason for the current call
 
     def _log(self, tool: str, arguments: dict, result) -> None:
         self.journal.append({
             "time": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "type": "tool", "stage": self.stage, "reason": self.reason,
             "tool": tool, "model": MODEL_FOR_TOOL[tool], "backend": self.backend,
             "arguments": arguments, "result": result,
         })
+        self.reason = None
 
     # ------------------------------------------------------------------ tools
 
@@ -146,8 +196,9 @@ class Toolset:
         if chosen is None:
             chosen = next((a for a in self.dossier.handler_answers() if a.get("default")),
                           {"id": "H0", "answer": "No answer recorded."})
-        if self.backend == "live" and chosen.get("audio"):
-            text = models.transcribe(self.dossier.path(chosen["audio"]))
+        audio = self._audio(chosen)
+        if self.backend == "live" and audio:
+            text = models.transcribe(audio)
         else:
             text = chosen["answer"]
         result = {"id": chosen["id"], "question": question, "asked_start": start, "asked_end": end,
@@ -157,6 +208,40 @@ class Toolset:
         self.observations["handler_answers"].append(result)
         self._log("ask_handler", {"question": question, "start": start, "end": end}, result)
         return result
+
+    def _audio(self, item: dict):
+        """Recording of a note or answer: the ``audio`` field, else ``voice/audio/<id>.<ext>``."""
+        if item.get("audio"):
+            return self.dossier.path(item["audio"])
+        folder = self.dossier.root / "voice" / "audio"
+        for extension in ("m4a", "mp3", "wav", "ogg", "webm"):
+            candidate = folder / f"{item.get('id')}.{extension}"
+            if candidate.exists():
+                return candidate
+        return None
+
+    def convoy_notes(self) -> list[dict]:
+        """Convoy attendant's notes, transcribed (Muse Voice Transcribe in live mode when the
+        note has an audio file; the stored transcript otherwise)."""
+        notes = []
+        for note in self.dossier.convoy_notes():
+            text = note["text"]
+            audio = self._audio(note)
+            if self.backend == "live" and audio:
+                text = models.transcribe(audio)
+            notes.append({"id": note["id"], "time": note["time"], "text": text})
+        self._log("convoy_notes", {}, notes)
+        return notes
+
+    def entry_record(self) -> dict:
+        """What the agent may know from the entry record (never expected.json)."""
+        record = self.dossier.record
+        keys = ("id", "synthetic", "route", "schedule", "phase_model", "declared", "sensor")
+        entry = {k: record[k] for k in keys if k in record}
+        entry["documents"] = sorted(record.get("documents", {}))
+        entry["photos"] = self.observations["expected_crates"]
+        entry["sensor_curve_available"] = bool(record.get("sensor_curve"))
+        return entry
 
     def draft_notification(self, recipient: str, summary: str) -> dict:
         draft = {"recipient": recipient, "status": "draft — not sent", "body": summary}

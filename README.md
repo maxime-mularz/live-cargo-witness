@@ -9,8 +9,8 @@ Built for the Meta Global AI Developer Hackathon (Oct 27 – Nov 4, 2026), Start
 Marfik Group. Built for live-animal shipments subject to the IATA Live Animals Regulations; not
 affiliated with or endorsed by IATA.
 
-> **Status: work in progress (day 1).** The deterministic core and the evaluation bench are in
-> place and tested offline. The Meta model integrations and the agent loop are being wired next.
+> **Status: work in progress (day 2).** The deterministic core, the evaluation benches, the agent
+> loop and the journal page are in place and tested offline. The Meta model adapters are being wired next.
 
 ## Why
 
@@ -59,8 +59,9 @@ Everything under [`new/`](new/) was written during the event (see the dated git 
 | Non-AI verifier | `new/lcw/verifier.py` | done |
 | Handover record + SHA-256 manifest | `new/lcw/casefile.py` | done |
 | Bench scoring | `new/lcw/score.py` | done |
+| Two-stage agent loop and prompts | `new/lcw/agent.py`, `new/lcw/prompts.py` | done, tested with a scripted client |
+| Investigation journal page | `new/lcw/journal_page.py` | done |
 | Meta model adapters | `new/lcw/models.py` | in progress |
-| Agent loop and investigation journal page | `new/lcw/agent.py` | in progress |
 | Dossier format specification | `new/bench/FORMAT.md` | done |
 | Reserved bench (5 independent dossiers, encrypted until the code freeze) | `new/bench/reserved.*` | in progress |
 

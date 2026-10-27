@@ -40,7 +40,18 @@ def transcribe(audio: Path) -> str:
 
 
 def chat(messages: list[dict], tools: list[dict] | None = None) -> dict:
-    """Muse Spark Open (orchestration). Return the assistant message, including tool calls."""
+    """Muse Spark Open (orchestration), used by ``lcw.agent``.
+
+    ``messages``: ``{"role": "system"|"user"|"assistant"|"tool", "content": str|None}``; assistant
+    messages may carry ``tool_calls`` (same shape as returned below); tool messages carry
+    ``tool_call_id`` and ``name``. ``tools``: ``lcw.tools.TOOL_SCHEMAS`` entries
+    ``{"name", "description", "parameters": <JSON schema>}`` — convert them to the provider's
+    tool-calling format here.
+
+    Return, normalised whatever the provider format:
+    ``{"content": str | None, "tool_calls": [{"id": str, "name": str, "arguments": dict}]}``
+    (``arguments`` already parsed from JSON; an empty list when the model answers directly).
+    """
     raise NotImplementedError("wire Muse Spark Open tool calling here")
 
 

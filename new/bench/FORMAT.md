@@ -95,6 +95,10 @@ One row every `sampling_minutes`, from `loading_start` to `unloading_end` includ
 ..., {"id": "H0", "default": true, "answer": "...", "audio": null}]`. Asking the handler about an
 interval returns the first non-default answer whose `[start, end]` overlaps it, else the default.
 
+Recordings: put the audio of a note or answer in `voice/audio/<id>.m4a` (or `.mp3`, `.wav`,
+`.ogg`, `.webm`), e.g. `voice/audio/N2.m4a`, or set its `audio` field to a relative path. In live
+mode the recording is transcribed by Muse Voice Transcribe instead of using the stored text.
+
 ## Flight phases (schedule mode)
 
 | Phase | From | To (excluded) |
