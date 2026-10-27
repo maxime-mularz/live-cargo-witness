@@ -94,4 +94,4 @@ python new/scripts/verify_case.py <case_dir>
 
 ## License
 
-To be decided before submission.
+[Apache License 2.0](LICENSE). Copyright 2026 Marfik Group — see [NOTICE](NOTICE).
