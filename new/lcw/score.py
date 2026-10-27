@@ -13,6 +13,7 @@ A reported deviation matches an expected one when the rule is the same and the i
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -99,24 +100,46 @@ def score_bench(bench_dir: Path | str, results_dir: Path | str) -> dict:
 
 
 def cost_metrics(usages: list[dict]) -> dict:
-    """CA-12: mean time, model calls and tokens per dossier, as measured during the run. The
-    cost is computed only from prices the operator sets (LCW_PRICE_IN_PER_MTOK and
-    LCW_PRICE_OUT_PER_MTOK, USD per million tokens, from the provider's pricing page)."""
+    """CA-12: mean time and model calls per dossier, tokens per model, as measured during the
+    runs (all means over the same dossiers: those whose result carries a usage record).
+
+    Cost: each model is priced only from the prices the operator sets in ``LCW_PRICES``, a JSON
+    object ``{"<model id>": [USD per million input tokens, USD per million output tokens]}``
+    copied from the provider's pricing page. Models without a price, and calls that reported no
+    token count, are listed: the cost is then a lower bound and says so."""
     if not usages:
         return {}
-
-    def mean(key):
-        values = [u[key] for u in usages if isinstance(u.get(key), int | float)]
-        return round(sum(values) / len(values), 1) if values else None
-
-    metrics = {"CA-12 mean seconds per dossier": mean("seconds"),
-               "CA-12 mean model calls per dossier": mean("model_calls"),
-               "CA-12 mean tokens per dossier (in / out)": f"{mean('prompt_tokens')} / {mean('completion_tokens')}"}
-    price_in, price_out = os.environ.get("LCW_PRICE_IN_PER_MTOK"), os.environ.get("LCW_PRICE_OUT_PER_MTOK")
-    tokens_in, tokens_out = mean("prompt_tokens"), mean("completion_tokens")
-    if price_in and price_out and tokens_in is not None and tokens_out is not None:
-        cost = (tokens_in * float(price_in) + tokens_out * float(price_out)) / 1_000_000
-        metrics["CA-12 mean cost per dossier (USD, orchestration prices)"] = round(cost, 4)
+    count = len(usages)
+    totals: dict[str, dict] = {}
+    for usage in usages:
+        for model, entry in (usage.get("by_model") or {}).items():
+            total = totals.setdefault(model, dict.fromkeys(entry, 0))
+            for key, value in entry.items():
+                total[key] = total.get(key, 0) + (value or 0)
+    metrics = {
+        "CA-12 dossiers measured": count,
+        "CA-12 mean seconds per dossier": round(sum(u.get("seconds") or 0 for u in usages) / count, 1),
+        "CA-12 mean model calls per dossier": round(sum(u.get("model_calls") or 0 for u in usages) / count, 1),
+    }
+    for model, total in sorted(totals.items()):
+        metrics[f"CA-12 {model}: mean tokens per dossier (in / out)"] = (
+            f"{total.get('prompt_tokens', 0) / count:.0f} / {total.get('completion_tokens', 0) / count:.0f}"
+            + (f" ({total['calls_without_tokens']} calls without token count)" if total.get("calls_without_tokens")
+               else "") + (f" ({total['failed']} failed calls)" if total.get("failed") else ""))
+    try:
+        prices = json.loads(os.environ.get("LCW_PRICES") or "{}")
+    except json.JSONDecodeError:
+        prices = {}
+    if prices and totals:
+        cost = sum((totals[m].get("prompt_tokens", 0) * prices[m][0]
+                    + totals[m].get("completion_tokens", 0) * prices[m][1]) / 1_000_000
+                   for m in totals if m in prices)
+        unpriced = sorted(m for m in totals if m not in prices)
+        incomplete = unpriced or any(t.get("calls_without_tokens") for m, t in totals.items() if m in prices)
+        label = "CA-12 mean cost per dossier (USD" + (", lower bound" if incomplete else "") + ")"
+        metrics[label] = round(cost / count, 4)
+        if unpriced:
+            metrics["CA-12 models without a price"] = ", ".join(unpriced)
     return metrics
 
 

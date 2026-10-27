@@ -115,9 +115,15 @@ TOOL_SCHEMAS = [
 
 
 class Toolset:
-    def __init__(self, dossier: Dossier, backend: str = "offline", rules=None):
+    def __init__(self, dossier: Dossier, backend: str = "offline", rules=None,
+                 allow_real_data: bool = False):
         if backend not in ("offline", "live"):
             raise ValueError(backend)
+        if backend == "live" and not dossier.synthetic and not allow_real_data:
+            # CLAUDE.md rule 2: no client document, photo, curve or recording is sent to any API
+            # without the client's written consent (and never on free credits, whose prompts
+            # may be used for product improvement).
+            raise ValueError(f"{dossier.id} is not marked synthetic: refusing to send it to the model APIs")
         self.dossier = dossier
         self.backend = backend
         self.rules = rules or load_rules()

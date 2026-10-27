@@ -98,14 +98,23 @@ def normalise_decision(final: dict | None) -> tuple[str | None, list[str], list[
 
 
 def usage_summary(calls: list[dict], seconds: float) -> dict:
-    """Model calls of one run (CA-12: time and cost per dossier). Token counts as reported by
-    the providers; None when a provider reports none."""
-    def total(key):
-        values = [c[key] for c in calls if isinstance(c.get(key), int)]
-        return sum(values) if values else None
-    return {"model_calls": len(calls), "prompt_tokens": total("prompt_tokens"),
-            "completion_tokens": total("completion_tokens"), "seconds": round(seconds, 1),
-            "by_model": sorted({c["model"] for c in calls})}
+    """Model calls of one run, per model (CA-12: time and cost per dossier). Token counts are
+    those the providers report; calls that report none are counted apart, never as zero."""
+    by_model: dict[str, dict] = {}
+    for call in calls:
+        entry = by_model.setdefault(call.get("model", "?"), {
+            "calls": 0, "failed": 0, "attempts": 0, "prompt_tokens": 0, "completion_tokens": 0,
+            "calls_without_tokens": 0})
+        entry["calls"] += 1
+        entry["attempts"] += call.get("attempts") or 1
+        if call.get("failed"):
+            entry["failed"] += 1
+        elif isinstance(call.get("prompt_tokens"), int) and isinstance(call.get("completion_tokens"), int):
+            entry["prompt_tokens"] += call["prompt_tokens"]
+            entry["completion_tokens"] += call["completion_tokens"]
+        else:
+            entry["calls_without_tokens"] += 1
+    return {"model_calls": len(calls), "seconds": round(seconds, 1), "by_model": by_model}
 
 
 def _arguments(call: dict) -> dict:

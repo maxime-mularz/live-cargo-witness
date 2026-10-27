@@ -3,6 +3,7 @@ that requests follow the providers' documented formats. Nothing here calls a rea
 import io
 import json
 import urllib.error
+import urllib.request
 import wave
 
 import pytest
@@ -119,6 +120,8 @@ def test_client_errors_are_not_retried_and_hide_the_key(keys, monkeypatch):
 
 def test_missing_key_names_the_variable(monkeypatch):
     monkeypatch.delenv("BASETEN_API_KEY", raising=False)
+    monkeypatch.delenv("LCW_ORCHESTRATOR", raising=False)
+    monkeypatch.setattr(models, "_send", Transport())  # any network call would fail the test
     with pytest.raises(models.ModelError, match="BASETEN_API_KEY"):
         models.chat([{"role": "user", "content": "u"}])
 
@@ -127,14 +130,17 @@ def test_read_document_types_and_regions(keys, monkeypatch):
     folder = dossier_dirs()[0]
     image = folder / "documents" / "awb.png"
     answer = {"fields": {"awb_number": "AWB 000-12345675", "head_count": "12", "handling_codes": "AVI",
-                         "temperature_range_c": "10 °C to 24 °C", "signed": "yes", "route": ["ORI", "DES"]},
+                         "temperature_range_c": "2-8 °C", "route": "ORI → STO → DES",
+                         "flights": "LCW 101 / LCW 202", "consignee": {"value": "copied object"},
+                         "nature_of_goods": "Live animals — heifers"},
               "boxes": {"awb_number": [100, 50, 400, 80], "head_count": "nowhere"}}
     fake = Transport(completion(content="Here it is:\n```json\n" + json.dumps(answer) + "\n```"))
     monkeypatch.setattr(models, "_send", fake)
     read = models.read_document_image(image, "awb")
     assert read["awb_number"] == "000-12345675" and read["head_count"] == 12
-    assert read["handling_codes"] == ["AVI"] and read["temperature_range_c"] == [10.0, 24.0]
-    assert read["shipper"] is None  # not read -> None, never guessed
+    assert read["handling_codes"] == ["AVI"] and read["temperature_range_c"] == [2.0, 8.0]
+    assert read["route"] == ["ORI", "STO", "DES"] and read["flights"] == ["LCW101", "LCW202"]
+    assert read["shipper"] is None and read["consignee"] is None  # not read -> None, never guessed
     assert set(read) == set(DOCUMENT_FIELDS["awb"]) | {"_regions"}
     assert read["_regions"] == {"awb_number": [100, 44, 400, 71]}  # 1000x890 image, 0-1000 grid
     part = fake.body()["messages"][1]["content"][1]
@@ -150,19 +156,24 @@ def test_truth_files_match_the_field_schema():
             assert coerce_document(document, values) == values, (folder.name, document)
 
 
-SAM_STREAM = "\n".join([
-    'data: {"type": "response.created"}',
-    'data: {"type": "response.output_text.delta", "delta": "<0f>0<|box;x1=30;y1=40;x2=300;y2=120;w=900;h=650;c=0.9|>"}',
-    'data: {"type": "response.output_text.delta", "delta": "<|mask;x=0;y=0;data=80,270,~abc|>"}',
-    'data: {"type": "response.completed", "response": {"usage": {"input_tokens": 7, "output_tokens": 3}}}',
-    "",
-])
+def sam_stream(box: str) -> str:
+    return "\n".join([
+        'data: {"type": "response.created"}',
+        'data: {"type": "response.output_text.delta", "delta": "<0f>0<|box;' + box + ';w=900;h=650;c=0.9|>"}',
+        'data: {"type": "response.output_text.delta", "delta": "<|mask;x=0;y=0;data=80,270,~abc|>"}',
+        'data: {"type": "response.completed", "response": {"usage": {"input_tokens": 7, "output_tokens": 3}}}',
+        "",
+    ])
+
+
+LABEL, ARROWS, PLATE = "x1=150;y1=170;x2=460;y2=280", "x1=560;y1=180;x2=730;y2=330", "x1=145;y1=390;x2=590;y2=475"
 
 
 def test_segment_crate_uses_sam_then_reads_crops(keys, monkeypatch):
+    from PIL import Image
     folder = dossier_dirs()[0]
     image = folder / "photos" / "crate_01.png"
-    fake = Transport(SAM_STREAM, SAM_STREAM, SAM_STREAM,
+    fake = Transport(sam_stream(LABEL), sam_stream(ARROWS), sam_stream(PLATE),
                      completion(content='{"live_animals": true}'),
                      completion(content='{"direction": "down"}'),
                      completion(content='{"awb_number": "AWB 000-12345675"}'))
@@ -173,9 +184,42 @@ def test_segment_crate_uses_sam_then_reads_crops(keys, monkeypatch):
     assert [s["input"][0]["content"][0]["text"] for s in sam] == list(models.SAM_CONCEPTS.values())
     assert sam[0]["model"] == "sam-3.1" and sam[0]["stream"] is True
     assert sam[0]["input"][0]["content"][1]["type"] == "input_image"
-    assert features == {"live_animals_label": {"present": True, "bbox": [30, 40, 300, 120]},
-                        "orientation_arrows": {"present": True, "direction": "down", "bbox": [30, 40, 300, 120]},
-                        "awb_number": {"value": "000-12345675", "bbox": [30, 40, 300, 120]}}
+    assert features == {"live_animals_label": {"present": True, "bbox": [150, 170, 460, 280]},
+                        "orientation_arrows": {"present": True, "direction": "down", "bbox": [560, 180, 730, 330]},
+                        "awb_number": {"value": "000-12345675", "bbox": [145, 390, 590, 475]}}
+    # the vision model receives SAM's crop of the plate (with a 12 px margin), not the whole photo
+    url = json.loads(fake.requests[5].data)["messages"][1]["content"][1]["image_url"]["url"]
+    crop = Image.open(io.BytesIO(__import__("base64").b64decode(url.split(",", 1)[1])))
+    assert crop.size == (590 - 145 + 24, 475 - 390 + 24)
+
+
+def test_unread_crops_are_unreadable_not_violations(keys, monkeypatch):
+    from lcw.predeparture import evaluate_rule
+    from lcw.rules import load_rules
+    folder = dossier_dirs()[0]
+    fake = Transport(sam_stream(LABEL), sam_stream(ARROWS), sam_stream(PLATE),
+                     completion(content='{"live_animals": null}'), completion(content='{"direction": null}'),
+                     completion(content='{"awb_number": null}'))
+    monkeypatch.setattr(models, "_send", fake)
+    features = models.segment_crate_image(folder / "photos" / "crate_01.png")
+    assert all(feature["readable"] is False for feature in features.values())
+    rules = load_rules()
+    observations = {"documents": {"awb": {"awb_number": "000-12345675"}}, "crates": {"crate_01": features},
+                    "expected_crates": ["crate_01"]}
+    for rule_id in ("R04", "R05", "R06"):
+        assert evaluate_rule(rules[rule_id], observations)["outcome"] == "unreadable", rule_id
+
+
+@pytest.mark.parametrize("body", [
+    'data: {"type": "response.output_text.delta", "delta": "<0f>"}\n',            # cut before completed
+    '{"error": {"message": "overloaded"}}',                                        # JSON body, no stream
+    'data: {"type": "response.incomplete", "response": {}}\n',
+    "",
+])
+def test_sam_stream_that_does_not_complete_is_an_error(keys, monkeypatch, body):
+    monkeypatch.setattr(models, "_send", Transport(body))
+    with pytest.raises(models.ModelError):
+        models.sam_boxes(b"png", "arrow")
 
 
 def test_sam_finding_nothing_means_absent(keys, monkeypatch):
@@ -184,9 +228,10 @@ def test_sam_finding_nothing_means_absent(keys, monkeypatch):
     fake = Transport(empty, empty, empty)
     monkeypatch.setattr(models, "_send", fake)
     features = models.segment_crate_image(folder / "photos" / "crate_01.png")
-    assert features["live_animals_label"]["present"] is False
-    assert features["orientation_arrows"] == {"present": False, "direction": None, "bbox": None}
-    assert features["awb_number"]["value"] is None and len(fake.requests) == 3
+    assert features == {"live_animals_label": {"present": False, "bbox": None},
+                        "orientation_arrows": {"present": False, "direction": None, "bbox": None},
+                        "awb_number": {"value": None, "bbox": None}}
+    assert len(fake.requests) == 3
 
 
 def test_transcribe_sends_multipart_wav(keys, monkeypatch, tmp_path):
@@ -212,3 +257,73 @@ def test_transcribe_refuses_unconvertible_audio(keys, monkeypatch, tmp_path):
     monkeypatch.setattr(models.shutil, "which", lambda name: None)
     with pytest.raises(models.ModelError, match="16 kHz mono WAV"):
         models.transcribe(audio)
+
+
+def test_tool_calls_without_id_get_one_id_used_on_both_sides(keys, monkeypatch):
+    fake = Transport(completion(tool_calls=[{"type": "function", "function": {"name": "lookup_rule",
+                                                                             "arguments": "{oops"}}]))
+    monkeypatch.setattr(models, "_send", fake)
+    call = models.chat([{"role": "user", "content": "u"}])["tool_calls"][0]
+    assert call["id"].startswith("call_")
+    replay = models._to_provider_messages([{"role": "assistant", "content": None, "tool_calls": [call]},
+                                           {"role": "tool", "tool_call_id": call["id"], "content": "{}"}])
+    assert replay[0]["tool_calls"][0]["id"] == replay[1]["tool_call_id"] == call["id"]
+    assert replay[0]["tool_calls"][0]["function"]["arguments"] == "{}"  # malformed JSON never replayed
+
+
+def test_key_never_leaves_over_http_or_a_redirect(keys, monkeypatch):
+    monkeypatch.setenv("LCW_OPEN_BASE_URL", "http://inference.example/v1")
+    monkeypatch.setattr(models, "_send", Transport())
+    with pytest.raises(models.ModelError, match="non-HTTPS"):
+        models.chat([{"role": "user", "content": "u"}])
+    request = urllib.request.Request("https://api.meta.ai/v1/x", headers={"Authorization": "Bearer k"})
+    with pytest.raises(urllib.error.HTTPError):
+        models._NoRedirect().redirect_request(request, None, 302, "Found", {}, "https://elsewhere.example/")
+
+
+@pytest.mark.parametrize("reply", [
+    {"error": {"message": "bad"}}, {"choices": []}, {"choices": [{"message": None}]}, "not json", "[1, 2]",
+])
+def test_unexpected_provider_responses_raise_model_errors(keys, monkeypatch, reply):
+    monkeypatch.setattr(models, "_send", Transport(reply))
+    with pytest.raises(models.ModelError):
+        models.chat([{"role": "user", "content": "u"}])
+
+
+def test_content_parts_with_null_text_and_bad_confidence():
+    message = {"content": [{"type": "text", "text": None}, {"text": "ok"}]}
+    assert models._from_provider_message(message)["content"] == "ok"
+    assert models.parse_sam_output("<|box;x1=1;y1=2;x2=3;y2=4;c=high|>,1<|box;x1=5;y1=6;x2=7;y2=8|>") == [
+        {"bbox": [5, 6, 7, 8]}]
+
+
+def test_live_mode_refuses_a_dossier_not_marked_synthetic(tmp_path):
+    import shutil
+
+    from lcw.dossier import Dossier
+    from lcw.tools import Toolset
+    folder = tmp_path / "REAL-01"
+    shutil.copytree(dossier_dirs()[0], folder)
+    record = json.loads((folder / "dossier.json").read_text())
+    record["synthetic"] = False
+    (folder / "dossier.json").write_text(json.dumps(record))
+    with pytest.raises(ValueError, match="not marked synthetic"):
+        Toolset(Dossier(folder), backend="live")
+    Toolset(Dossier(folder), backend="offline")  # offline stays possible: nothing is sent
+
+
+def test_usage_is_counted_per_model_and_cost_is_a_labelled_lower_bound(monkeypatch):
+    from lcw.agent import usage_summary
+    from lcw.score import cost_metrics
+    usage = usage_summary([
+        {"model": "open", "prompt_tokens": 1000, "completion_tokens": 100, "attempts": 2},
+        {"model": "open", "failed": True, "attempts": 5},
+        {"model": "muse-voice-transcribe-1.0", "prompt_tokens": None, "completion_tokens": None},
+    ], 12.0)
+    assert usage["by_model"]["open"] == {"calls": 2, "failed": 1, "attempts": 7, "prompt_tokens": 1000,
+                                         "completion_tokens": 100, "calls_without_tokens": 0}
+    assert usage["by_model"]["muse-voice-transcribe-1.0"]["calls_without_tokens"] == 1
+    monkeypatch.setenv("LCW_PRICES", json.dumps({"open": [1.0, 10.0]}))
+    metrics = cost_metrics([usage, usage])
+    assert metrics["CA-12 mean cost per dossier (USD, lower bound)"] == 0.002
+    assert metrics["CA-12 models without a price"] == "muse-voice-transcribe-1.0"

@@ -49,9 +49,14 @@ def evaluate_rule(rule: Rule, observations: dict) -> dict:
         if not crates or missing:
             return {"rule": rule.id, "outcome": "unreadable",
                     "details": {"crates": len(crates), "not_segmented": missing}}
-        failing = []
+        failing, unreadable = [], []
         expected_awb = _field(observations, check.get("document", "awb"), check.get("field", "awb_number"))
+        feature_name = {"crate_feature_present": check.get("feature"), "crate_arrows_up": "orientation_arrows",
+                        "crate_awb_matches": "awb_number"}[kind]
         for crate_id, features in sorted(crates.items()):
+            if (features.get(feature_name) or {}).get("readable") is False:
+                unreadable.append(crate_id)  # found but not read: never counted as a violation
+                continue
             if kind == "crate_feature_present":
                 ok = bool(features.get(check["feature"], {}).get("present"))
             elif kind == "crate_arrows_up":
@@ -62,10 +67,14 @@ def evaluate_rule(rule: Rule, observations: dict) -> dict:
             if not ok:
                 failing.append(crate_id)
         details["failing_crates"] = failing
+        if unreadable:
+            details["unreadable_crates"] = unreadable
         if kind == "crate_awb_matches" and expected_awb is None:
             outcome = "unreadable"
         elif failing:
             outcome = "violated"
+        elif unreadable:
+            outcome = "unreadable"
     else:
         raise ValueError(f"{rule.id}: not a pre-departure check ({kind})")
     return {"rule": rule.id, "outcome": outcome, "details": details}

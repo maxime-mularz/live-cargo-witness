@@ -74,7 +74,9 @@ Images and data must be fictitious and say so: every image carries a visible "SY
   "awb_number": {"value": "000-12345675", "bbox": [x0, y0, x1, y1]}}}
 ```
 
-`direction` is `"up"`, `"down"` or `null` (no arrows).
+`direction` is `"up"`, `"down"` or `null` (no arrows). A feature that was found but could not be
+read carries `"readable": false` (it makes its rule unreadable, never violated); truth files of
+generated dossiers never need it.
 
 ## Sensor log — sensor/curve.csv
 

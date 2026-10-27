@@ -15,9 +15,11 @@ def load(name):
 
 
 def test_ca06_five_unsourced_claims_are_rejected():
-    ok, outcomes = load("check_ca06").run()
+    module = load("check_ca06")
+    ok, outcomes = module.run()
     assert ok and len(outcomes) == 5
-    assert all(reasons for _, reasons in outcomes)
+    claim = module.base_claim(module.Toolset(module.Dossier(module.DEFAULT), backend="offline"))
+    assert [name for name, _, _ in module.injected(claim)] == [name for name, _ in outcomes]
 
 
 def test_output_scan_finds_forbidden_words_in_records(tmp_path):

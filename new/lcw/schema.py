@@ -18,12 +18,12 @@ DOCUMENT_FIELDS: dict[str, dict[str, tuple[str, str]]] = {
         "awb_number": ("awb", "air waybill number, digits ddd-dddddddd"),
         "shipper": ("str", "shipper name"),
         "consignee": ("str", "consignee name"),
-        "route": ("list_str", "airport codes in order"),
-        "flights": ("list_str", "flight numbers in order"),
+        "route": ("list_code", "airport codes in order, as a list"),
+        "flights": ("list_flight", "flight numbers in order, as a list"),
         "date": ("date", "date, YYYY-MM-DD"),
         "nature_of_goods": ("str", "nature and quantity of goods"),
         "head_count": ("int", "number of animals (heads)"),
-        "handling_codes": ("list_str", "special handling codes, e.g. AVI"),
+        "handling_codes": ("list_code", "special handling codes as a list, e.g. [\"AVI\"]"),
         "handling_information": ("str", "handling information text, verbatim"),
         "temperature_range_c": ("range", "temperature range in degrees C as [low, high]"),
     },
@@ -44,19 +44,42 @@ DOCUMENT_FIELDS: dict[str, dict[str, tuple[str, str]]] = {
 }
 
 DATE_RE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
+# A "-" is a minus sign only when it does not follow a digit: "2-8" is a range, "-5" a number.
+NUMBER_RE = re.compile(r"(?:(?<![\d.,])-)?\d+(?:[.,]\d+)?")
+ITEM_PATTERNS = {"list_code": re.compile(r"^[A-Z]{3}$"), "list_flight": re.compile(r"^[A-Z0-9]{2,3}\d{1,4}[A-Z]?$")}
+LIST_SEPARATORS = re.compile(r"\s*(?:[,;/|→—–]|->)\s*")
+
+
+def _numbers(text: str) -> list[float | int]:
+    found = []
+    for match in NUMBER_RE.finditer(text):
+        token = match.group().replace(",", ".")
+        found.append(float(token) if "." in token else int(token))
+    return found
 
 
 def _number(value):
+    """One number, or None. A string holding several numbers ("2 crates, 24 heads") is
+    ambiguous and gives None rather than the first one."""
     if isinstance(value, bool):
         return None
     if isinstance(value, int | float):
         return value
     if isinstance(value, str):
-        match = re.search(r"-?\d+(?:[.,]\d+)?", value)
-        if match:
-            text = match.group().replace(",", ".")
-            return float(text) if "." in text else int(text)
+        found = _numbers(value)
+        return found[0] if len(found) == 1 else None
     return None
+
+
+def _items(kind: str, value) -> list[str] | None:
+    if isinstance(value, str):
+        value = [part for part in LIST_SEPARATORS.split(value.strip()) if part]
+        if kind == "list_code":  # codes may also be separated by spaces: "AVI PER"
+            value = [code for part in value for code in part.split()]
+    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+        return None
+    items = [re.sub(r"\s+", "", v) if kind == "list_flight" else v.strip() for v in value]
+    return items if all(ITEM_PATTERNS[kind].match(item) for item in items) else None
 
 
 def coerce(kind: str, value):
@@ -64,6 +87,8 @@ def coerce(kind: str, value):
     if value is None:
         return None
     if kind == "str":
+        if isinstance(value, bool) or not isinstance(value, str | int | float):
+            return None  # e.g. a copied {"value": ...} object is not a printed value
         return str(value).strip() or None
     if kind == "int":
         number = _number(value)
@@ -79,17 +104,13 @@ def coerce(kind: str, value):
     if kind == "date":
         match = DATE_RE.search(str(value))
         return match.group() if match else None
-    if kind == "list_str":
-        if isinstance(value, str):
-            value = [part for part in re.split(r"[,;/\s]+", value) if part]
-        return [str(v).strip() for v in value if str(v).strip()] if isinstance(value, list) else None
+    if kind in ITEM_PATTERNS:
+        return _items(kind, value)
     if kind == "range":
-        if isinstance(value, str):
-            value = re.findall(r"-?\d+(?:[.,]\d+)?", value)
-        if isinstance(value, list) and len(value) == 2:
-            low, high = (_number(v) for v in value)
-            if low is not None and high is not None:
-                return [float(low), float(high)]
+        numbers = _numbers(value) if isinstance(value, str) else (
+            [_number(v) for v in value] if isinstance(value, list) else [])
+        if len(numbers) == 2 and None not in numbers and numbers[0] <= numbers[1]:
+            return [float(numbers[0]), float(numbers[1])]
         return None
     if kind == "crates":
         if not isinstance(value, list):

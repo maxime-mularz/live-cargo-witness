@@ -106,43 +106,84 @@ def orchestrator_name() -> str:
 
 # ---------------------------------------------------------------------- HTTP
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Never follow a redirect: urllib would resend the Authorization header to the new host."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(req.full_url, code, "redirect refused", headers, fp)
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
 def _send(request: urllib.request.Request):
     """The only function that touches the network (replaced in tests)."""
-    return urllib.request.urlopen(request, timeout=TIMEOUT_S)
+    return _OPENER.open(request, timeout=TIMEOUT_S)
 
 
 def _request(endpoint: Endpoint, path: str, body: bytes, content_type: str, accept: str = "application/json"):
+    """POST with retries. Returns ``(response, attempts)``; a call that fails for good is
+    recorded in ``USAGE`` before ``ModelError`` is raised."""
     url = f"{endpoint.base_url}{path}"
+    if not url.startswith("https://"):
+        raise ModelError(f"{endpoint.label}: refusing to send the API key to a non-HTTPS URL")
     headers = {"Authorization": f"Bearer {endpoint.key()}", "Content-Type": content_type, "Accept": accept}
     last = None
     for attempt in range(RETRIES + 1):
         request = urllib.request.Request(url, data=body, headers=headers, method="POST")
         try:
-            return _send(request)
+            return _send(request), attempt + 1
         except urllib.error.HTTPError as error:
             detail = error.read().decode("utf-8", "replace")[:500] if error.fp else ""
             last = ModelError(redact(f"{endpoint.label}: HTTP {error.code} on {path}: {detail}"))
             if error.code not in (408, 409, 429) and error.code < 500:
+                USAGE.append({"model": endpoint.model, "failed": True, "attempts": attempt + 1})
                 raise last from None
         except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
             last = ModelError(redact(f"{endpoint.label}: network error on {path}: {error}"))
         if attempt < RETRIES:
             time.sleep(min(30.0, 2 ** attempt) * (0.5 + random.random()))
+    USAGE.append({"model": endpoint.model, "failed": True, "attempts": RETRIES + 1})
     raise last
+
+
+def _json_body(endpoint: Endpoint, response) -> dict:
+    raw = response.read().decode("utf-8", "replace")
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        raise ModelError(redact(f"{endpoint.label}: response is not JSON: {raw[:200]}")) from None
+    if not isinstance(data, dict):
+        raise ModelError(redact(f"{endpoint.label}: unexpected response {raw[:200]}"))
+    return data
 
 
 def _post_json(endpoint: Endpoint, path: str, payload: dict) -> dict:
     started = time.monotonic()
-    with _request(endpoint, path, json.dumps(payload).encode(), "application/json") as response:
-        data = json.loads(response.read().decode("utf-8"))
-    _note_usage(endpoint, data.get("usage") or {}, time.monotonic() - started)
+    response, attempts = _request(endpoint, path, json.dumps(payload).encode(), "application/json")
+    with response:
+        data = _json_body(endpoint, response)
+    _note_usage(endpoint, data.get("usage"), time.monotonic() - started, attempts)
     return data
 
 
-def _note_usage(endpoint: Endpoint, usage: dict, seconds: float) -> None:
-    USAGE.append({"model": endpoint.model, "prompt_tokens": usage.get("prompt_tokens") or usage.get("input_tokens"),
-                  "completion_tokens": usage.get("completion_tokens") or usage.get("output_tokens"),
-                  "seconds": round(seconds, 2)})
+def _note_usage(endpoint: Endpoint, usage, seconds: float | None, attempts: int = 1) -> None:
+    usage = usage if isinstance(usage, dict) else {}
+    USAGE.append({"model": endpoint.model,
+                  "prompt_tokens": usage.get("prompt_tokens", usage.get("input_tokens")),
+                  "completion_tokens": usage.get("completion_tokens", usage.get("output_tokens")),
+                  "seconds": None if seconds is None else round(seconds, 2), "attempts": attempts})
+
+
+def _message(endpoint: Endpoint, data: dict) -> dict:
+    """``choices[0].message`` of a Chat Completions response, or a clear error."""
+    try:
+        message = data["choices"][0]["message"]
+    except (KeyError, IndexError, TypeError):
+        message = None
+    if not isinstance(message, dict):
+        raise ModelError(redact(f"{endpoint.label}: unexpected response {json.dumps(data)[:300]}"))
+    return message
 
 
 # ---------------------------------------------------------------------- chat (orchestration)
@@ -156,30 +197,50 @@ def _to_provider_messages(messages: list[dict]) -> list[dict]:
                               "content": message.get("content") or ""})
         elif role == "assistant" and message.get("tool_calls"):
             converted.append({"role": "assistant", "content": message.get("content"),
-                              "tool_calls": [{"id": call.get("id") or f"call_{i}", "type": "function",
+                              "tool_calls": [{"id": call.get("id") or "", "type": "function",
                                               "function": {"name": call.get("name") or "",
-                                                           "arguments": call["arguments"]
-                                                           if isinstance(call.get("arguments"), str)
-                                                           else json.dumps(call.get("arguments") or {})}}
-                                             for i, call in enumerate(message["tool_calls"])]})
+                                                           "arguments": _replayed(call.get("arguments"))}}
+                                             for call in message["tool_calls"]]})
         else:
             converted.append({"role": role, "content": message.get("content") or ""})
     return converted
 
 
+def _replayed(arguments) -> str:
+    """Arguments as replayed to the provider: the JSON the model sent, or "{}" when it was not
+    valid JSON (some servers re-parse replayed arguments and would reject every later turn)."""
+    if isinstance(arguments, dict):
+        return json.dumps(arguments)
+    if isinstance(arguments, str):
+        try:
+            json.loads(arguments)
+            return arguments
+        except json.JSONDecodeError:
+            return "{}"
+    return "{}"
+
+
 def _from_provider_message(message: dict) -> dict:
     calls = []
     for call in message.get("tool_calls") or []:
+        if not isinstance(call, dict):
+            continue
         function = call.get("function") or {}
         arguments = function.get("arguments")
         if isinstance(arguments, str):
             # left as a string if it is not JSON: the agent reports it to the model as a tool error
             with contextlib.suppress(json.JSONDecodeError):
                 arguments = json.loads(arguments) if arguments.strip() else {}
-        calls.append({"id": call.get("id"), "name": function.get("name"), "arguments": arguments})
+        # One id per call, given here, so the replayed call and its tool result always match.
+        call_id = call.get("id")
+        if not isinstance(call_id, str) or not call_id:
+            call_id = f"call_{uuid.uuid4().hex[:12]}"
+        calls.append({"id": call_id, "name": function.get("name"), "arguments": arguments})
     content = message.get("content")
     if isinstance(content, list):  # content parts
-        content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
+        content = "".join(part.get("text") or "" for part in content if isinstance(part, dict))
+    elif content is not None and not isinstance(content, str):
+        content = None
     return {"content": content, "tool_calls": calls}
 
 
@@ -204,11 +265,7 @@ def chat(messages: list[dict], tools: list[dict] | None = None) -> dict:
     if os.environ.get("LCW_REASONING_EFFORT"):
         payload["reasoning_effort"] = os.environ["LCW_REASONING_EFFORT"]
     data = _post_json(endpoint, "/chat/completions", payload)
-    try:
-        message = data["choices"][0]["message"]
-    except (KeyError, IndexError, TypeError):
-        raise ModelError(redact(f"{endpoint.label}: unexpected response {json.dumps(data)[:300]}")) from None
-    return _from_provider_message(message)
+    return _from_provider_message(_message(endpoint, data))
 
 
 # ---------------------------------------------------------------------- images
@@ -227,7 +284,7 @@ def _vision_json(endpoint: Endpoint, image: Path | bytes, instruction: str, keys
         {"role": "user", "content": [{"type": "text", "text": instruction},
                                      {"type": "image_url", "image_url": {"url": _data_url(image)}}]}]}
     data = _post_json(endpoint, "/chat/completions", payload)
-    text = _from_provider_message(data["choices"][0]["message"])["content"]
+    text = _from_provider_message(_message(endpoint, data))["content"]
     found = final_json(text, keys)
     if found is None:
         raise ModelError(f"{endpoint.label}: the answer contains no JSON object")
@@ -279,17 +336,18 @@ def parse_sam_output(text: str) -> list[dict]:
         values = dict(part.split("=", 1) for part in match.group(1).split(";") if "=" in part)
         try:
             box = {"bbox": [int(float(values[k])) for k in ("x1", "y1", "x2", "y2")]}
+            if "c" in values:
+                box["confidence"] = float(values["c"])
         except (KeyError, ValueError):
             continue
-        if "c" in values:
-            box["confidence"] = float(values["c"])
         boxes.append(box)
     return boxes
 
 
-def _read_sse_text(response) -> str:
-    """Accumulate ``response.output_text.delta`` events until ``response.completed``."""
-    parts = []
+def _read_sse_text(response, attempts: int = 1, started: float | None = None) -> str:
+    """Accumulate ``response.output_text.delta`` events until ``response.completed``. A stream
+    that ends any other way is an error: partial output would read as "nothing found"."""
+    parts, completed = [], False
     for raw in response:
         line = raw.decode("utf-8", "replace").strip()
         if not line.startswith("data:"):
@@ -302,15 +360,23 @@ def _read_sse_text(response) -> str:
         except json.JSONDecodeError:
             continue
         kind = event.get("type")
+        if not isinstance(event, dict):
+            continue
+        kind = event.get("type")
         if kind == "response.output_text.delta":
-            parts.append(event.get("delta", ""))
+            parts.append(event.get("delta") or "")
         elif kind == "response.completed":
-            usage = (event.get("response") or {}).get("usage") or {}
-            USAGE.append({"model": "sam-3.1", "prompt_tokens": usage.get("input_tokens"),
-                          "completion_tokens": usage.get("output_tokens"), "seconds": None})
+            completed = True
+            response_body = event.get("response") if isinstance(event.get("response"), dict) else {}
+            seconds = None if started is None else time.monotonic() - started
+            _note_usage(Endpoint("", "sam-3.1", (), "SAM 3.1"), response_body.get("usage"), seconds, attempts)
             break
-        elif kind in ("error", "response.failed"):
+        elif kind in ("error", "response.failed", "response.incomplete"):
+            USAGE.append({"model": "sam-3.1", "failed": True, "attempts": attempts})
             raise ModelError(redact(f"SAM 3.1: {json.dumps(event)[:300]}"))
+    if not completed:
+        USAGE.append({"model": "sam-3.1", "failed": True, "attempts": attempts})
+        raise ModelError("SAM 3.1: the stream ended before response.completed (partial result not used)")
     return "".join(parts)
 
 
@@ -321,9 +387,11 @@ def sam_boxes(image: Path | bytes, concept: str) -> list[dict]:
                "input": [{"type": "message", "role": "user", "content": [
                    {"type": "input_text", "text": concept},
                    {"type": "input_image", "image_url": _data_url(image)}]}]}
-    with _request(endpoint, "/responses", json.dumps(payload).encode(), "application/json",
-                  accept="text/event-stream") as response:
-        return parse_sam_output(_read_sse_text(response))
+    started = time.monotonic()
+    response, attempts = _request(endpoint, "/responses", json.dumps(payload).encode(), "application/json",
+                                  accept="text/event-stream")
+    with response:
+        return parse_sam_output(_read_sse_text(response, attempts, started))
 
 
 def _crop(image: Path, box: list[int], margin: int = 12) -> bytes:
@@ -350,28 +418,33 @@ def segment_crate_image(image: Path) -> dict:
         return max(boxes, key=lambda b: b.get("confidence", 0))["bbox"] if boxes else None
 
     label_box, arrow_box, plate_box = (best(found[f]) for f in SAM_CONCEPTS)
-    label_present = False
+    # Not found by SAM -> absent. Found but not read by the vision model -> "readable": False,
+    # which makes the rule unreadable, never violated: a reading failure is not a deviation.
+    label = {"present": False, "bbox": None}
     if label_box:
         answer = _vision_json(open_endpoint(), _crop(image, label_box),
                               'Does this crop show a label reading "LIVE ANIMALS"? '
-                              'Return {"live_animals": true|false}.', ("live_animals",))
-        label_present = answer.get("live_animals") is True
-    direction = None
+                              'Return {"live_animals": true|false|null}.', ("live_animals",))
+        seen = answer.get("live_animals")
+        label = ({"present": seen, "bbox": label_box if seen else None} if isinstance(seen, bool)
+                 else {"present": None, "bbox": label_box, "readable": False})
+    arrows = {"present": False, "direction": None, "bbox": None}
     if arrow_box:
         answer = _vision_json(open_endpoint(), _crop(image, arrow_box),
                               'These are orientation arrows on a crate. Return {"direction": "up"|"down"|null}.',
                               ("direction",))
-        direction = answer.get("direction") if answer.get("direction") in ("up", "down") else None
-    plate = None
+        direction = answer.get("direction")
+        arrows = ({"present": True, "direction": direction, "bbox": arrow_box} if direction in ("up", "down")
+                  else {"present": True, "direction": None, "bbox": arrow_box, "readable": False})
+    plate = {"value": None, "bbox": None}
     if plate_box:
         answer = _vision_json(open_endpoint(), _crop(image, plate_box),
                               'Read the air waybill number on this plate. Return {"awb_number": "ddd-dddddddd"|null}.',
                               ("awb_number",))
         match = AWB_RE.search(str(answer.get("awb_number") or ""))
-        plate = match.group() if match else None
-    return {"live_animals_label": {"present": label_present, "bbox": label_box if label_present else None},
-            "orientation_arrows": {"present": arrow_box is not None, "direction": direction, "bbox": arrow_box},
-            "awb_number": {"value": plate, "bbox": plate_box}}
+        plate = ({"value": match.group(), "bbox": plate_box} if match
+                 else {"value": None, "bbox": plate_box, "readable": False})
+    return {"live_animals_label": label, "orientation_arrows": arrows, "awb_number": plate}
 
 
 # ---------------------------------------------------------------------- Voice Transcribe
@@ -418,9 +491,10 @@ def transcribe(audio: Path) -> str:
     body, content_type = _multipart([("request", None, "application/json", json.dumps(settings).encode()),
                                      ("audio", "audio.wav", "audio/wav", _as_wav(Path(audio)))])
     started = time.monotonic()
-    with _request(endpoint, "/asr/transcribe", body, content_type) as response:
-        data = json.loads(response.read().decode("utf-8"))
-    _note_usage(endpoint, {}, time.monotonic() - started)
+    response, attempts = _request(endpoint, "/asr/transcribe", body, content_type)
+    with response:
+        data = _json_body(endpoint, response)
+    _note_usage(endpoint, None, time.monotonic() - started, attempts)
     transcript = data.get("transcript")
     if not isinstance(transcript, str):
         raise ModelError("Muse Voice Transcribe: no transcript in the response")
@@ -439,4 +513,4 @@ def write_record_text(facts: dict, language: str = "en") -> str:
                                       "the animals' condition."},
         {"role": "user", "content": f"Language: {language}. Facts (JSON):\n{json.dumps(facts, ensure_ascii=False)}"}]}
     data = _post_json(endpoint, "/chat/completions", payload)
-    return (_from_provider_message(data["choices"][0]["message"])["content"] or "").strip()
+    return (_from_provider_message(_message(endpoint, data))["content"] or "").strip()
