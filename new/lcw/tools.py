@@ -19,7 +19,7 @@ from .rules import load_rules
 
 MODEL_FOR_TOOL = {
     "read_document": "Muse Spark Open",
-    "segment_crate": "SAM 3.1",
+    "segment_crate": "SAM 3.1 + Muse Spark Open",
     "get_sensor_curve": "deterministic (lcw.deviations)",
     "lookup_rule": "deterministic (rule cards)",
     "ask_handler": "Muse Voice Transcribe",

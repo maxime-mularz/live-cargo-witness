@@ -13,6 +13,7 @@ A reported deviation matches an expected one when the rule is the same and the i
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from .dossier import load_json, parse_ts
@@ -61,12 +62,14 @@ def score_dossier(expected: dict, result: dict | None) -> dict:
 
 def score_bench(bench_dir: Path | str, results_dir: Path | str) -> dict:
     bench_dir, results_dir = Path(bench_dir), Path(results_dir)
-    rows = []
+    rows, usages = [], []
     for folder in sorted(p for p in bench_dir.iterdir() if (p / "expected.json").exists()):
         expected = load_json(folder / "expected.json")
         result_path = results_dir / f"{expected['dossier_id']}.json"
         result = load_json(result_path) if result_path.exists() else None
         rows.append(score_dossier(expected, result))
+        if result and result.get("usage"):
+            usages.append(result["usage"])
 
     def ratio(selected, key):
         selected = list(selected)
@@ -90,8 +93,31 @@ def score_bench(bench_dir: Path | str, results_dir: Path | str) -> dict:
                                                   "investigation_ok"),
         "phase 1 decisions correct": ratio(rows, "phase1_ok"),
         "investigations fully correct": ratio(investigated, "investigation_ok"),
+        **cost_metrics(usages),
     }
     return {"metrics": metrics, "rows": rows}
+
+
+def cost_metrics(usages: list[dict]) -> dict:
+    """CA-12: mean time, model calls and tokens per dossier, as measured during the run. The
+    cost is computed only from prices the operator sets (LCW_PRICE_IN_PER_MTOK and
+    LCW_PRICE_OUT_PER_MTOK, USD per million tokens, from the provider's pricing page)."""
+    if not usages:
+        return {}
+
+    def mean(key):
+        values = [u[key] for u in usages if isinstance(u.get(key), int | float)]
+        return round(sum(values) / len(values), 1) if values else None
+
+    metrics = {"CA-12 mean seconds per dossier": mean("seconds"),
+               "CA-12 mean model calls per dossier": mean("model_calls"),
+               "CA-12 mean tokens per dossier (in / out)": f"{mean('prompt_tokens')} / {mean('completion_tokens')}"}
+    price_in, price_out = os.environ.get("LCW_PRICE_IN_PER_MTOK"), os.environ.get("LCW_PRICE_OUT_PER_MTOK")
+    tokens_in, tokens_out = mean("prompt_tokens"), mean("completion_tokens")
+    if price_in and price_out and tokens_in is not None and tokens_out is not None:
+        cost = (tokens_in * float(price_in) + tokens_out * float(price_out)) / 1_000_000
+        metrics["CA-12 mean cost per dossier (USD, orchestration prices)"] = round(cost, 4)
+    return metrics
 
 
 def to_markdown(report: dict, title: str = "Bench score") -> str:

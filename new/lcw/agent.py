@@ -21,11 +21,13 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Protocol
 
 from . import models
 from .env import redact
+from .jsonutil import final_json
 from .predeparture import evaluate
 from .prompts import INVESTIGATION, PRE_DEPARTURE
 from .tools import TOOL_SCHEMAS, Toolset
@@ -44,9 +46,12 @@ class ModelClient(Protocol):
 
 
 class MetaModelClient:
-    """Production client: Muse Spark Open through ``lcw.models.chat``."""
+    """Production client: Muse Spark Open through ``lcw.models.chat`` (or Muse Spark when
+    ``LCW_ORCHESTRATOR=spark``, the CA-02 fallback)."""
 
-    model_name = "Muse Spark Open"
+    @property
+    def model_name(self) -> str:
+        return models.orchestrator_name()
 
     def chat(self, messages: list[dict], tools: list[dict]) -> dict:
         return models.chat(messages, tools)
@@ -71,34 +76,6 @@ class AgentRun:
 
 # ---------------------------------------------------------------------- parsing helpers
 
-def final_json(text: str | None, keys: tuple[str, ...]) -> dict | None:
-    """Extract the model's final JSON object, even when wrapped in prose or code fences.
-    Prefers the last object that carries one of ``keys``."""
-    if not text:
-        return None
-    stripped = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip())
-    try:
-        value = json.loads(stripped)
-        if isinstance(value, dict):
-            return value
-    except json.JSONDecodeError:
-        pass
-    decoder = json.JSONDecoder()
-    found: list[dict] = []
-    position = 0
-    while (start := text.find("{", position)) != -1:  # top-level objects only, never nested ones
-        try:
-            value, end = decoder.raw_decode(text, start)
-        except json.JSONDecodeError:
-            position = start + 1
-            continue
-        if isinstance(value, dict):
-            found.append(value)
-        position = end
-    with_keys = [v for v in found if any(k in v for k in keys)]
-    return (with_keys or found or [None])[-1]
-
-
 def normalise_decision(final: dict | None) -> tuple[str | None, list[str], list[str]]:
     """Return (decision, violated_rules, problems) from the stage-1 final JSON."""
     problems: list[str] = []
@@ -118,6 +95,17 @@ def normalise_decision(final: dict | None) -> tuple[str | None, list[str], list[
     if len(rules) != len([r for r in raw if r]):
         problems.append(f"ignored invalid entries in violated_rules: {raw!r}")
     return decision, rules, problems
+
+
+def usage_summary(calls: list[dict], seconds: float) -> dict:
+    """Model calls of one run (CA-12: time and cost per dossier). Token counts as reported by
+    the providers; None when a provider reports none."""
+    def total(key):
+        values = [c[key] for c in calls if isinstance(c.get(key), int)]
+        return sum(values) if values else None
+    return {"model_calls": len(calls), "prompt_tokens": total("prompt_tokens"),
+            "completion_tokens": total("completion_tokens"), "seconds": round(seconds, 1),
+            "by_model": sorted({c["model"] for c in calls})}
 
 
 def _arguments(call: dict) -> dict:
@@ -201,6 +189,7 @@ class Agent:
         return StageOutcome(None, self.max_steps, f"no final answer after {self.max_steps} steps", messages)
 
     def run(self) -> AgentRun:
+        started, calls_before = time.monotonic(), len(models.USAGE)
         entry = self.tools.entry_record()
         pre = self._loop("pre_departure", PRE_DEPARTURE,
                          "Entry record:\n" + json.dumps(entry, ensure_ascii=False, indent=1),
@@ -240,5 +229,6 @@ class Agent:
             "errors": errors,
             "warnings": problems,
             "decision_matches_readings": decision == deterministic["decision"],
+            "usage": usage_summary(models.USAGE[calls_before:], time.monotonic() - started),
         }
         return AgentRun(self.tools.dossier.id, pre, investigation, deterministic, result)

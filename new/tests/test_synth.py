@@ -38,3 +38,31 @@ def test_committed_bench_matches_generator(tmp_path):
                 twin = tmp_path / folder.name / path.relative_to(folder)
                 assert twin.exists(), twin
                 assert sha256_file(path) == sha256_file(twin), path
+
+
+def test_demo_dossiers_match_the_storyboard(tmp_path):
+    from lcw import BENCH_DIR
+    from lcw.synth import build_demo
+
+    demo = BENCH_DIR / "demo"
+    build_demo(tmp_path)
+    for path in demo.rglob("*"):
+        if path.is_file() and path.suffix in (".json", ".csv"):
+            assert sha256_file(path) == sha256_file(tmp_path / path.relative_to(demo)), path
+    one, two, three = (load_json(demo / f"DEMO-0{i}" / "expected.json") for i in (1, 2, 3))
+    # Scenario 1: 12 heads on the air waybill, 10 on the certification, one arrow down.
+    assert one["phase1"] == {"decision": "block", "violated_rules": ["R03", "R05"]}
+    counts = {d: load_json(demo / "DEMO-01" / "documents" / f"{d}.truth.json")["fields"]["head_count"]["value"]
+              for d in ("awb", "certification")}
+    assert counts == {"awb": 12, "certification": 10}
+    # Scenario 2: stopover temperature, shock and light; the note says no handling; the handler explains.
+    assert two["investigation"]["handler_call_expected"] is True
+    assert {d["rule"] for d in two["investigation"]["deviations"]} == {"R07", "R09", "R10"}
+    assert {d["phase"] for d in two["investigation"]["deviations"]} == {"stopover"}
+    notes = load_json(demo / "DEMO-02" / "voice" / "convoy_notes.json")
+    assert any("no handling" in n["text"] for n in notes)
+    # Scenario 3: a light peak at departure inside the declared inspection, dismissed without a call.
+    assert three["investigation"]["handler_call_expected"] is False
+    assert [d["status"] for d in three["investigation"]["deviations"]] == ["false_positive_dismissed"]
+    for folder in demo.iterdir():
+        assert load_json(folder / "dossier.json")["synthetic"] is True

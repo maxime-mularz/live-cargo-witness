@@ -1,0 +1,13 @@
+{
+  "dossier_id": "DEMO-01",
+  "category": "demo_block_R03_R05",
+  "synthetic": true,
+  "phase1": {
+    "decision": "block",
+    "violated_rules": [
+      "R03",
+      "R05"
+    ]
+  },
+  "investigation": null
+}

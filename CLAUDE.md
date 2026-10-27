@@ -37,6 +37,7 @@ new/
   lcw/            Python package (tools, verifier, case file, scoring)
   rules/          10 rule cards R01–R10 (YAML)
   bench/dev/      20 generated dossiers + expected.json (do not hand-edit; regenerate)
+  bench/demo/     the 3 filmed scenarios (DEMO-01 block, DEMO-02 stopover, DEMO-03 false positive)
   bench/FORMAT.md complete dossier format (write real or test dossiers from it)
   bench/reserved/ 5 independent dossiers, encrypted until the freeze (see rule 9)
   scripts/        CLI entry points
@@ -53,6 +54,8 @@ Built offline (no network needed, fully tested):
 - `lcw/predeparture.py` — deterministic evaluation of R01–R06 on what the models read.
 - `lcw/tools.py` — the agent's tools, their JSON schemas, offline stand-ins, journal logging.
 - `lcw/vocab.py` — forbidden (veterinary) vocabulary, matched by stems.
+- `lcw/schema.py` — the fields read on each document, with their types (single source).
+- `lcw/jsonutil.py` — extracting the JSON object a model was asked for from its answer.
 - `lcw/env.py` — minimal `.env` loader (keys never printed).
 - `lcw/phases.py` — flight phase segmentation from declared hours (EF-08, fallback mode).
 - `lcw/deviations.py` — deterministic deviation detection on a curve (EF-09).
@@ -63,12 +66,15 @@ Built offline (no network needed, fully tested):
 - `lcw/runner.py` — runs the agent on a dossier or a bench, writes results, cases and raw runs.
 - `lcw/score.py` — bench scoring against `expected.json`.
 
+Written from the providers' docs, tested offline with a fake transport, NOT yet run live:
+- `lcw/models.py` — adapters for Muse Spark Open (Baseten, OpenAI-compatible Chat Completions),
+  SAM 3.1 (Meta Model API `/v1/responses`, streamed special-token boxes), Muse Voice Transcribe
+  (`/v1/asr/transcribe`, 16 kHz mono WAV), Muse Spark (Meta Model API). Configuration in the module
+  docstring and `.env.example`. On Baseten the hackathon model id is `meta-models/muse-spark-open-1026`.
+
 Left for the machine that holds the API keys (with Claude Code or Muse Code):
-- `lcw/models.py` — adapters for Muse Spark Open (Baseten), SAM 3.1, Muse Voice Transcribe,
-  Muse Spark (Meta Model API). The function signatures and return shapes are fixed (see the
-  docstrings, in particular `chat`); the bodies raise `NotImplementedError` until wired. Check each
-  provider's docs for the request format — do not guess. On Baseten the hackathon model id is
-  `meta-models/muse-spark-open-1026`. Validate with `python new/scripts/test_ca02.py`.
+- Validate the adapters with `python new/scripts/test_ca02.py`; fix any request format against the
+  provider's docs — do not guess. If CA-02 fails, set `LCW_ORCHESTRATOR=spark`.
 - Then: `python new/scripts/run_agent.py new/bench/dev/DEV-02` (scenario 2), then the whole bench.
 - Prompt tuning happens in `lcw/prompts.py`, on `bench/dev` only.
 
@@ -77,7 +83,7 @@ Left for the machine that holds the API keys (with Claude Code or Muse Code):
 | Tool | Backed by | Offline stand-in |
 | --- | --- | --- |
 | `read_document` | Muse Spark Open (vision) | `documents/*.truth.json` |
-| `segment_crate` | SAM 3.1 | `photos/*.truth.json` |
+| `segment_crate` | SAM 3.1 (finds) + Muse Spark Open (reads the crops) | `photos/*.truth.json` |
 | `get_sensor_curve` | Tive API or CSV export | `sensor/curve.csv` |
 | `lookup_rule` | `lcw.rules` | same |
 | `ask_handler` | recorded answer + Voice Transcribe | `voice/handler_answers.json` |
@@ -99,10 +105,12 @@ python new/scripts/run_bench.py new/bench/dev --dry-run         # plumbing check
 python new/scripts/score_bench.py new/bench/dev <out>/results   # re-score existing results
 python new/scripts/seal_bench.py <folder> [--check <seal_file>] # seal of a bench folder
 python new/scripts/recording_list.py DEV-02 DEV-07  # sentences to record (voice/audio/<id>.m4a)
-python new/scripts/generate_bench.py                # regenerate bench/dev (deterministic seeds)
+python new/scripts/generate_bench.py [--demo]       # regenerate bench/dev (or bench/demo), deterministic
+python new/scripts/check_ca06.py                    # CA-06: 5 unsourced claims injected, 5 rejected
 python new/scripts/verify_case.py <case_dir>        # recompute the PV hashes
 python new/scripts/unseal_bench.py                  # AFTER the freeze only: decrypt + check the seal
 python new/scripts/check_release.py                 # before every push: lint, tests, secrets, names, seal
+python new/scripts/check_release.py --fast --outputs <out>      # CA-13 on a run's outputs
 ```
 
 `--dry-run` uses a scripted client that reads `expected.json`: it checks the plumbing and proves

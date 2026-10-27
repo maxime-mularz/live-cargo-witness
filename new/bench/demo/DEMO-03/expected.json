@@ -1,0 +1,21 @@
+{
+  "dossier_id": "DEMO-03",
+  "category": "false_positive",
+  "synthetic": true,
+  "phase1": {
+    "decision": "go",
+    "violated_rules": []
+  },
+  "investigation": {
+    "handler_call_expected": false,
+    "deviations": [
+      {
+        "rule": "R10",
+        "start": "2026-11-02T08:35:00Z",
+        "end": "2026-11-02T08:45:00Z",
+        "phase": "ground_departure",
+        "status": "false_positive_dismissed"
+      }
+    ]
+  }
+}

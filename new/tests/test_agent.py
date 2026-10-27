@@ -35,7 +35,7 @@ def test_rejected_claim_is_fixed_and_shown_in_journal(tmp_path):
     assert result["case"] == "written"
     page = (tmp_path / "cases" / result["dossier_id"] / "journal.html").read_text()
     assert "rejected C1" in page and "number 37" in page
-    assert "SAM 3.1 · offline stand-in" in page and "stored transcript (no recording)" in page
+    assert "SAM 3.1 + Muse Spark Open · offline stand-in" in page and "stored transcript (no recording)" in page
     assert "Offline run" in page and "scripted test client" in page
     assert "SYNTHETIC" in page and "Ground handler asked" in page
 

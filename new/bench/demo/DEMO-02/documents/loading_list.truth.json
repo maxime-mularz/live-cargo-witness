@@ -1,0 +1,37 @@
+{
+  "document": "loading_list",
+  "synthetic": true,
+  "fields": {
+    "awb_number": {
+      "value": "000-31594953",
+      "bbox": [
+        360,
+        151,
+        554,
+        169
+      ]
+    },
+    "head_count": {
+      "value": 10,
+      "bbox": [
+        360,
+        361,
+        393,
+        379
+      ]
+    },
+    "crates": {
+      "value": [
+        {
+          "crate": "crate_01",
+          "head_count": 6
+        },
+        {
+          "crate": "crate_02",
+          "head_count": 4
+        }
+      ],
+      "bbox": null
+    }
+  }
+}

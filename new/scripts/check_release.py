@@ -1,6 +1,8 @@
 """Pre-push check: run before every push and before the submission.
 
-Usage: python new/scripts/check_release.py [--fast]     (--fast skips ruff and pytest)
+Usage: python new/scripts/check_release.py [--fast] [--outputs DIR]
+  --fast          skips ruff and pytest
+  --outputs DIR   also scans a run's output folder (cases/, results/) — CA-13 on the bench outputs
 
 Checks the files git tracks (what the judges will see), never the reserved bench's content:
   1. ruff and the offline test suite pass;
@@ -18,6 +20,7 @@ import json
 import re
 import subprocess
 import sys
+from pathlib import Path
 
 import _path  # noqa: F401
 from lcw import NEW_DIR
@@ -97,6 +100,34 @@ def check_secrets(report: Report, files: list[str]) -> None:
     report.check("no secret in tracked files", problems)
 
 
+def private_name_patterns() -> list[re.Pattern] | None:
+    names_file = REPO / ".private-names"
+    if not names_file.exists():
+        return None
+    names = [n.strip() for n in names_file.read_text(encoding="utf-8").splitlines()
+             if n.strip() and not n.startswith("#")]
+    return [re.compile(r"(?i)\b" + re.escape(n) + r"\b") for n in names]
+
+
+def check_outputs(report: Report, folder: Path) -> None:
+    """CA-13 on what the agent produced: no forbidden word in the records, no private name anywhere."""
+    if not folder.is_dir():
+        report.check(f"outputs in {folder}", [f"{folder} is not a folder"])
+        return
+    patterns = private_name_patterns() or []
+    if not patterns:
+        report.warn(".private-names is missing: private names not checked in the outputs")
+    problems = []
+    for path in sorted(p for p in folder.rglob("*") if p.is_file() and p.suffix in (".json", ".md", ".html")):
+        relative = path.relative_to(folder).as_posix()
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if any(pattern.search(text) for pattern in patterns):
+            problems.append(f"{relative}: contains a private name")
+        if relative.startswith("cases/") and find_forbidden(text):
+            problems.append(f"{relative}: forbidden vocabulary {find_forbidden(text)}")
+    report.check(f"outputs of {folder.name}: no private name, no forbidden word in records", problems)
+
+
 def check_private_names(report: Report, files: list[str]) -> None:
     names_file = REPO / ".private-names"
     if not names_file.exists():
@@ -146,7 +177,7 @@ def check_reserved(report: Report, files: list[str]) -> None:
 def check_synthetic(report: Report, files: list[str]) -> None:
     problems = []
     for path in files:
-        if not path.startswith("new/bench/dev/"):
+        if not path.startswith(("new/bench/dev/", "new/bench/demo/")):
             continue
         if path.endswith(("dossier.json", ".truth.json", "expected.json", "convoy_notes.json")):
             data = json.loads((REPO / path).read_text(encoding="utf-8"))
@@ -196,6 +227,11 @@ def main() -> None:
     check_synthetic(report, files)
     check_wording(report, files)
     check_no_dry_run(report, files)
+    if "--outputs" in sys.argv:
+        index = sys.argv.index("--outputs") + 1
+        if index >= len(sys.argv):
+            raise SystemExit("--outputs needs a folder")
+        check_outputs(report, Path(sys.argv[index]).resolve())
     print(f"\n{'FAIL' if report.failures else 'OK'}: {len(report.failures)} problem(s), "
           f"{len(report.warnings)} warning(s)")
     sys.exit(1 if report.failures else 0)

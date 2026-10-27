@@ -25,6 +25,7 @@ STATUS_LABEL = {
 MODEL_CLASS = {
     "Muse Spark Open": "m-spark-open",
     "SAM 3.1": "m-sam",
+    "SAM 3.1 + Muse Spark Open": "m-sam",
     "Muse Voice Transcribe": "m-voice",
     "Muse Spark": "m-spark",
 }

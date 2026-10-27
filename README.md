@@ -39,12 +39,15 @@ voice notes and the ground crew's answers.
 
 ## Meta models
 
-| Model | Role |
-| --- | --- |
-| Muse Spark Open (Baseten, open weights) | Orchestrates the tools; reads document images |
-| SAM 3.1 | Segments crate photos: label, orientation arrows, air waybill plate |
-| Muse Voice Transcribe | Convoy attendant notes and ground handler answers |
-| Muse Spark | Writes the handover record text (English) |
+| Model | Role | Code |
+| --- | --- | --- |
+| Muse Spark Open (Baseten, open weights) | Orchestrates the tools; reads document images and SAM's crops | `new/lcw/models.py` (`chat`, `read_document_image`), `new/lcw/agent.py` |
+| SAM 3.1 (Meta Model API) | Finds the label, the orientation arrows and the air waybill plate on each crate photo | `new/lcw/models.py` (`segment_crate_image`, `sam_boxes`) |
+| Muse Voice Transcribe (Meta Model API) | Transcribes the convoy attendant's notes and the ground handler's answers | `new/lcw/models.py` (`transcribe`), `new/lcw/tools.py` |
+| Muse Spark (Meta Model API) | Fallback orchestrator if Muse Spark Open fails the tool-calling test (CA-02); record text writer (optional) | `new/lcw/models.py` (`chat` with `LCW_ORCHESTRATOR=spark`, `write_record_text`) |
+
+The investigation journal of every case names the model behind each step, and says "offline
+stand-in" when a step was answered from a dossier's ground-truth file instead of a model.
 
 ## Built during the hackathon
 
@@ -61,7 +64,9 @@ Everything under [`new/`](new/) was written during the event (see the dated git 
 | Bench scoring | `new/lcw/score.py` | done |
 | Two-stage agent loop and prompts | `new/lcw/agent.py`, `new/lcw/prompts.py` | done, tested with a scripted client |
 | Investigation journal page | `new/lcw/journal_page.py` | done |
-| Meta model adapters | `new/lcw/models.py` | in progress |
+| Meta model adapters (written from the providers' docs, tested offline; live validation pending) | `new/lcw/models.py` | in progress |
+| The three filmed scenarios as fictitious dossiers | `new/bench/demo/` | done |
+| Acceptance checks: CA-02 tool calling, CA-06 unsourced claims, CA-12 time and cost, CA-13 outputs scan | `new/scripts/test_ca02.py`, `check_ca06.py`, `score.py`, `check_release.py --outputs` | done offline |
 | Dossier format specification | `new/bench/FORMAT.md` | done |
 | Reserved bench (5 independent dossiers, encrypted until the code freeze) | `new/bench/reserved.*` | sealed, opened after the freeze |
 | Quality gates: lint, cross-file consistency tests, pre-push release check | `pyproject.toml`, `new/tests/test_consistency.py`, `new/scripts/check_release.py` | done |
@@ -87,7 +92,9 @@ pip install -r requirements.txt
 ruff check new
 python -m pytest new/tests -q
 python new/scripts/check_release.py        # before every push
-python new/scripts/generate_bench.py
+python new/scripts/generate_bench.py               # bench/dev; add --demo for bench/demo
+python new/scripts/check_ca06.py                    # the verifier rejects 5 unsourced claims out of 5
+python new/scripts/run_bench.py new/bench/demo --dry-run   # plumbing only, no model
 python new/scripts/score_bench.py new/bench/dev new/results/dev
 python new/scripts/verify_case.py <case_dir>
 ```

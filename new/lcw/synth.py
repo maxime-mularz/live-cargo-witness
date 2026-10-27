@@ -385,6 +385,12 @@ def build_dossier(spec: DossierSpec, out_dir: Path, day: datetime) -> dict:
         other = awb_number(rng)
         spec.crates[index]["awb"] = other
         violated = ["R06"]
+    elif category == "demo_block_R03_R05":  # filmed scenario 1: 12 heads declared, 10 certified, one arrow down
+        spec.crate_counts = [6, 6]
+        spec.head_counts = {"awb": 12, "certification": 10, "loading_list": 12}
+        spec.crates = [{"label": True, "arrows": "up", "awb": spec.awb},
+                       {"label": True, "arrows": "down", "awb": spec.awb}]
+        violated = ["R03", "R05"]
     blocked = bool(violated)
     spec.expected_phase1 = {"decision": "block" if blocked else "go", "violated_rules": violated}
 
@@ -543,6 +549,23 @@ def build_dossier(spec: DossierSpec, out_dir: Path, day: datetime) -> dict:
                 "phase1": spec.expected_phase1, "investigation": investigation}
     write_json(root / "expected.json", expected)
     return expected
+
+
+# The three filmed scenarios (storyboard): (id, category, variant).
+DEMO = [
+    ("DEMO-01", "demo_block_R03_R05", 0),   # block before departure, R03 and R05
+    ("DEMO-02", "explained_by_handler", 0),  # stopover: note says "no handling", the handler explains
+    ("DEMO-03", "false_positive", 0),        # light peak during the declared inspection, dismissed
+]
+
+
+def build_demo(out_dir: Path, seed: int = 20261103) -> list[dict]:
+    """Generate the three demo dossiers (fictitious, same generator as the development bench)."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    base_day = datetime(2026, 10, 30, tzinfo=UTC)
+    return [build_dossier(DossierSpec(dossier_id=dossier_id, category=category, variant=variant,
+                                      seed=seed + index), out_dir, base_day + timedelta(days=index))
+            for index, (dossier_id, category, variant) in enumerate(DEMO, start=1)]
 
 
 def build_bench(out_dir: Path, seed: int = 20261027, prefix: str = "DEV") -> list[dict]:
