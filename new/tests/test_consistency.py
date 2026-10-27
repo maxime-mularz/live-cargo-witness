@@ -72,6 +72,15 @@ def test_rule_cards_match_the_code():
     assert "R01–R06" in prompts.PRE_DEPARTURE and "R07–R10" in prompts.INVESTIGATION
 
 
+def test_statement_checks_are_told_to_the_model():
+    # Each phrase answers a verifier rejection seen in live runs (night run 2026-10-27).
+    for phrase in ("HH:MM UTC",                    # "time ... is not in the evidence"
+                   "never paste a full timestamp",  # ISO timestamps split into stray numbers
+                   "never as words",                # "spelled-out number ..."
+                   "air waybill number"):           # "air waybill number ... is not in the evidence"
+        assert phrase in " ".join(prompts.COMMON.split()), f"verifier check not explained to the model: {phrase}"
+
+
 def test_format_md_documents_every_dossier_field():
     record = load_json(dossier_dirs()[0] / "dossier.json")
     for key, value in record.items():
