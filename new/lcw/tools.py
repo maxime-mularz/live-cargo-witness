@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from . import models
 from .deviations import detect, values_in
 from .dossier import Dossier, load_json, parse_ts
+from .env import redact
 from .phases import segment
 from .rules import load_rules
 
@@ -220,7 +221,8 @@ class Toolset:
     def _audio(self, item: dict):
         """Recording of a note or answer: the ``audio`` field, else ``voice/audio/<id>.<ext>``."""
         if item.get("audio"):
-            return self.dossier.path(item["audio"])
+            path = self.dossier.path(item["audio"])
+            return path if path.is_file() else None
         folder = self.dossier.root / "voice" / "audio"
         for extension in ("m4a", "mp3", "wav", "ogg", "webm"):
             candidate = folder / f"{item.get('id')}.{extension}"
@@ -243,7 +245,13 @@ class Toolset:
         in ``observations`` so the verifier and the record use the same words."""
         notes, models_used = [], set()
         for note in self.dossier.convoy_notes():
-            text, model = self._voice_text(note, note["text"])
+            try:
+                text, model = self._voice_text(note, note["text"])
+            except Exception as error:  # a failed transcription falls back to the stored text
+                self.journal.append({"type": "error", "stage": self.stage, "tool": "convoy_notes",
+                                     "error": redact(f"transcription of {note['id']} failed: "
+                                                     f"{type(error).__name__}: {error}")})
+                text, model = note["text"], STORED_TEXT
             models_used.add(model)
             notes.append({"id": note["id"], "time": note["time"], "text": text,
                           "transcribed": self.backend == "live" and model == MODEL_FOR_TOOL["convoy_notes"]})
@@ -281,9 +289,10 @@ class Toolset:
         seen: set[str] = set()
         for claim in claims:
             reasons = []
-            claim_id = str(claim.get("id") or "")
-            if not claim_id:
-                reasons.append("claim needs an id")
+            claim_id = claim.get("id")
+            if not isinstance(claim_id, str) or not claim_id.strip():
+                reasons.append("claim id must be a non-empty string such as \"C1\"")
+                claim_id = repr(claim_id)
             elif claim_id in seen:
                 reasons.append(f"id {claim_id} is used twice in this submission")
             seen.add(claim_id)

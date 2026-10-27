@@ -45,7 +45,11 @@ CASES = [
 
 
 def same(a, b) -> bool:
-    """Strict equality: 1 is not 1.0, True is not 1, "3" is not 3 (Python's == says otherwise)."""
+    """Typed equality: True is not 1 and "3" is not 3 (Python's == says otherwise), but 10 and
+    10.0 are the same number (a range written "10 °C" is read as an int)."""
+    numbers = (int, float)
+    if isinstance(a, numbers) and isinstance(b, numbers) and not isinstance(a, bool) and not isinstance(b, bool):
+        return a == b
     if type(a) is not type(b):
         return False
     if isinstance(a, dict):
@@ -57,7 +61,7 @@ def same(a, b) -> bool:
 
 def difference(read, truth) -> str:
     if read == truth and not same(read, truth):
-        return f" (type: read {type(read).__name__}, expected {type(truth).__name__})"
+        return f" (types differ: read {json.dumps(read)}, expected {json.dumps(truth)})"
     return ""
 
 

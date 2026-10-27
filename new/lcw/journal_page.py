@@ -11,7 +11,7 @@ from __future__ import annotations
 import html
 import json
 
-from .vocab import mask_forbidden
+from .vocab import mask_deep, mask_forbidden
 
 STATUS_LABEL = {
     "explained_compliant": "Explained, compliant",
@@ -121,7 +121,7 @@ def _summary(entry: dict) -> str:
         report = result or {}
         parts = []
         if report.get("accepted"):
-            parts.append(f'<span class="acc">accepted {_e(", ".join(report["accepted"]))}</span>')
+            parts.append(f'<span class="acc">accepted {_e(", ".join(map(str, report["accepted"])))}</span>')
         for item in report.get("rejected", []):
             reasons = "; ".join(item.get("reasons", []))
             parts.append(f'<div><span class="rej">rejected {_e(item.get("id"))}</span> — {_e(reasons)}</div>')
@@ -147,6 +147,7 @@ def _rejected_then_fixed(tool_entries: list[dict]) -> int:
 def render(pv: dict, journal: list[dict]) -> str:
     stage_names = {"pre_departure": "Stage 1 — pre-departure check (connected)",
                    "investigation": "Stage 2 — investigation at first network contact"}
+    journal = mask_deep(journal)  # model text and verifier reasons are shown masked
     rows, current, step = [], object(), 0
     for entry in journal:
         stage = entry.get("stage")

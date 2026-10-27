@@ -252,3 +252,148 @@ def test_model_errors_are_redacted(monkeypatch):
     tools = Toolset(Dossier(folder), backend="offline")
     outcome = Agent(tools, client=Leaky())._loop("pre_departure", "STAGE 1", "go")
     assert "sk-test-1234567890" not in outcome.error and "[BASETEN_API_KEY]" in outcome.error
+
+
+# ---------------------------------------------------------------- third review (fixes to the fixes)
+
+def _bare_tools(folder):
+    tools = Toolset(Dossier(folder), backend="offline")
+    read_everything(tools)
+    tools.get_sensor_curve()
+    tools.convoy_notes()
+    tools.stage = "investigation"
+    return tools
+
+
+def test_wide_claim_cannot_stand_for_the_deviations():
+    folder = folder_of("indeterminate")
+    tools = _bare_tools(folder)
+    schedule = tools.dossier.record["schedule"]
+    rule = next(iter({d["rule"] for d in tools.get_sensor_curve()["deviations"]}))
+    card = tools.rules[rule]
+    wide = {"id": "C9", "kind": "deviation", "rule": rule, "status": "explained_rule_exceeded",
+            "interval": {"start": schedule["loading_start"], "end": schedule["unloading_end"]},
+            "statement": "The rule was exceeded during the flight.",
+            "evidence": [{"type": "curve_segment", "series": card.check["series"],
+                          "start": schedule["loading_start"], "end": schedule["unloading_end"]},
+                         {"type": "dossier_field", "path": card.threshold["path"]},
+                         {"type": "voice_note", "id": "N1"}]}
+    report = tools.write_case_file([wide])
+    assert report["accepted"] == []
+    assert any("returned by get_sensor_curve" in r for r in report["rejected"][0]["reasons"])
+    assert missing_claims(tools.dossier, tools.rules, [wide], tools.observations)
+
+
+def test_lazy_block_writes_no_record(tmp_path):
+    folder = folder_of("compliant")
+
+    class Lazy:
+        def chat(self, messages, tools):
+            return {"content": '{"decision": "block", "violated_rules": []}', "tool_calls": []}
+
+    result = run_dossier(folder, tmp_path, client=Lazy(), backend="offline")
+    assert result["phase1"]["decision"] == "block"
+    assert result["case"].startswith("refused") and "could not be checked" in result["case"]
+    assert not (tmp_path / "cases" / result["dossier_id"]).exists()
+
+
+def test_refused_rerun_removes_the_previous_record(tmp_path):
+    folder = folder_of("explained_by_handler")
+    first = run_dossier(folder, tmp_path, client=ScriptedClient(folder), backend="offline")
+    assert first["case"] == "written"
+    second = run_dossier(folder, tmp_path, client=Dropping(folder), backend="offline")
+    assert second["case"].startswith("refused")
+    assert not (tmp_path / "cases" / first["dossier_id"]).exists()
+
+
+def test_integer_claim_ids_are_rejected():
+    folder = folder_of("explained_by_note")
+    tools, pre, claims, _ = scripted_run(folder)
+    fresh = _bare_tools(folder)
+    deviation = dict(next(c for c in claims if c["kind"] == "deviation"), id=1)
+    report = fresh.write_case_file([deviation, dict(deviation, id="C2")])
+    assert report["accepted"] == ["C2"]
+    assert "non-empty string" in report["rejected"][0]["reasons"][0]
+
+
+def test_non_string_reason_does_not_break_the_record(tmp_path):
+    folder = folder_of("explained_by_note")
+
+    class ListReason(ScriptedClient):
+        def chat(self, messages, tools):
+            reply = super().chat(messages, tools)
+            for call in reply["tool_calls"]:
+                call["arguments"]["reason"] = ["check", "this"]
+            return reply
+
+    result = run_dossier(folder, tmp_path, client=ListReason(folder), backend="offline")
+    assert result["case"] == "written"
+    assert not list((tmp_path / "cases").glob("*.partial"))
+
+
+def test_record_shows_no_forbidden_word(tmp_path):
+    folder = folder_of("explained_by_handler")
+
+    class Wordy(ScriptedClient):
+        def chat(self, messages, tools):
+            reply = super().chat(messages, tools)
+            for call in reply["tool_calls"]:
+                if call["name"] == "ask_handler":
+                    call["arguments"]["question"] = "Were any animals injured or dead?"
+            return reply
+
+    from lcw.vocab import find_forbidden
+    result = run_dossier(folder, tmp_path, client=Wordy(folder, bad_first_submission=True), backend="offline")
+    case = tmp_path / "cases" / result["dossier_id"]
+    assert result["case"] == "written"
+    assert find_forbidden((case / "journal.html").read_text()) == []
+    assert find_forbidden((case / "journal.json").read_text()) == []
+    raw = (tmp_path / "runs" / f"{result['dossier_id']}.json").read_text()
+    assert "injured" in raw  # the raw journal is kept for debugging, outside the record
+
+
+def test_final_json_ignores_nested_objects():
+    text = ('Here is my answer: {"decision": "go", "violated_rules": [], '
+            '"checks": [{"rule": "R01", "decision": "satisfied"}]}')
+    assert final_json(text, ("decision",))["decision"] == "go"
+
+
+def test_transcription_failure_falls_back_to_stored_text(monkeypatch, tmp_path):
+    import shutil
+
+    from lcw import tools as tools_module
+    folder = tmp_path / "D"
+    shutil.copytree(folder_of("explained_by_note"), folder)
+    (folder / "voice" / "audio").mkdir(parents=True)
+    (folder / "voice" / "audio" / "N1.m4a").write_bytes(b"fake")
+
+    def boom(path):
+        raise ConnectionError("provider down")
+
+    monkeypatch.setattr(tools_module.models, "transcribe", boom)
+    live = Toolset(Dossier(folder), backend="live")
+    notes = live.convoy_notes()
+    assert [n["text"] for n in notes] == [n["text"] for n in Dossier(folder).convoy_notes()]
+    assert any(e["type"] == "error" and "N1" in e["error"] for e in live.journal)
+
+    declared = {"id": "N9", "audio": "voice/audio/missing.m4a"}
+    assert live._audio(declared) is None
+
+
+def test_redact_short_bearer_and_any_key_variable(monkeypatch):
+    monkeypatch.setenv("SOME_PROVIDER_API_KEY", "pk-123456789")
+    text = redact("Authorization: Bearer sk_live_abcd1234 and pk-123456789")
+    assert "sk_live_abcd1234" not in text and "pk-123456789" not in text
+
+
+def test_ca02_numbers_compare_as_numbers():
+    import importlib.util
+    import sys
+
+    from lcw import NEW_DIR
+    sys.path.insert(0, str(NEW_DIR / "scripts"))
+    spec = importlib.util.spec_from_file_location("test_ca02_script", NEW_DIR / "scripts" / "test_ca02.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert module.same([10, 24], [10.0, 24.0])
+    assert not module.same(True, 1) and not module.same("3", 3) and not module.same(1, True)

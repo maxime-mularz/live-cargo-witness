@@ -69,6 +69,19 @@ def find_forbidden(text: str) -> list[str]:
 def mask_forbidden(text: str) -> str:
     """Replace forbidden words by ``[withheld]`` — for free model text (stated reasons, final
     messages) that the verifier does not check but the journal page displays."""
+    text = "" if text is None else str(text)
     for _, pattern in _PATTERNS:
-        text = pattern.sub("[withheld]", text or "")
+        text = pattern.sub("[withheld]", text)
     return text
+
+
+def mask_deep(value):
+    """``mask_forbidden`` applied to every string of a JSON-like value (journal entries: model
+    reasons, questions, messages, verifier reasons quoting the words it rejected)."""
+    if isinstance(value, str):
+        return mask_forbidden(value)
+    if isinstance(value, list):
+        return [mask_deep(v) for v in value]
+    if isinstance(value, dict):
+        return {k: mask_deep(v) for k, v in value.items()}
+    return value

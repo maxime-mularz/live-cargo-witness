@@ -8,6 +8,7 @@ For each dossier:
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 from .agent import Agent, ModelClient
@@ -22,17 +23,22 @@ def run_dossier(folder: Path | str, out_dir: Path | str, client: ModelClient | N
     folder, out_dir = Path(folder), Path(out_dir)
     dossier = Dossier(folder)
     tools = Toolset(dossier, backend=backend)
+    case_dir = out_dir / "cases" / dossier.id
+    if case_dir.exists():  # never leave the record of an earlier run next to this run's result
+        shutil.rmtree(case_dir)
     run = Agent(tools, client=client, max_steps=max_steps).run()
     result = run.result
 
     case_status = case_refusal(run)
     if case_status is None:
         try:
-            write_case(out_dir / "cases" / dossier.id, dossier, tools.rules, tools.accepted,
+            write_case(case_dir, dossier, tools.rules, tools.accepted,
                        tools.observations, run.deterministic_pre_departure, tools.journal)
             case_status = "written"
         except (RejectedClaims, ValueError) as error:  # IncompleteCase is a ValueError
             case_status = f"refused: {error}"
+        except Exception as error:  # write_case writes atomically: nothing is left behind
+            case_status = f"not written: {type(error).__name__}: {redact(error)}"
 
     result["case"] = case_status
     write_json(out_dir / "results" / f"{dossier.id}.json", result)

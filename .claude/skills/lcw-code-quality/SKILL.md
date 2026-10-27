@@ -58,6 +58,9 @@ review by a separate agent that did not write the change:
 - ask for real bugs only (wrong record written, verifier bypass, crash on plausible model output,
   secret leak, test that does not test what it claims), each with a failing scenario;
 - turn every confirmed finding into a regression test, then fix it.
+- review the fixes too: a second pass on the agent loop found ten bugs in the first round's
+  fixes (a wide claim standing for several deviations, a record written without any reading);
+- check that each new test fails without its fix (revert the line, run the test, restore).
 
 ## 5. Hard-rules checklist (answer each before committing)
 

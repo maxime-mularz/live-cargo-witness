@@ -29,6 +29,7 @@ from .phases import segment
 from .predeparture import evaluate
 from .rules import Rule
 from .verifier import Verifier, notes_seen
+from .vocab import mask_deep
 
 STATUS_LABEL = {
     "explained_compliant": "Explained, compliant",
@@ -51,30 +52,31 @@ class IncompleteCase(ValueError):
         self.missing = missing
 
 
-def _overlaps(a_start: str, a_end: str, b_start: str, b_end: str) -> bool:
-    return parse_ts(a_start) <= parse_ts(b_end) and parse_ts(a_end) >= parse_ts(b_start)
-
-
 def missing_claims(dossier: Dossier, rules: dict[str, Rule], claims: list[dict],
                    observations: dict) -> list[str]:
-    """What the record would leave out: violated pre-departure rules without a 'violated'
-    claim, and deviations detected on the curve without a deviation claim overlapping them."""
-    missing = []
+    """What the record would leave out: pre-departure rules that could not be checked (a
+    document or a crate never read), violated rules without a 'violated' claim, and deviations
+    detected on the curve without their own deviation claim (matched one to one)."""
+    missing = [f"{rule_id} could not be checked (document or crate not read)"
+               for rule_id in evaluate(rules, observations).get("unreadable_rules", [])]
     pre = evaluate(rules, observations)
     for rule_id in pre.get("violated_rules", []):
         if not any(c.get("kind") == "pre_departure" and c.get("rule") == rule_id
                    and c.get("status") == "violated" for c in claims):
             missing.append(f"{rule_id} is violated but has no claim")
-    curve = dossier.curve()
-    if pre["decision"] == "go" and curve:
-        found = detect(curve, segment(dossier.record), rules, dossier.record)["deviations"]
-        for deviation in found:
-            covered = any(c.get("kind") == "deviation" and c.get("rule") == deviation["rule"]
-                          and c.get("interval")
-                          and _overlaps(c["interval"]["start"], c["interval"]["end"],
-                                        deviation["start"], deviation["end"])
-                          for c in claims)
-            if not covered:
+    verifier = Verifier(dossier, rules, observations)
+    if pre["decision"] == "go" and verifier.detected:
+        designated = set()
+        for claim in claims:
+            interval = claim.get("interval") or {}
+            if claim.get("kind") != "deviation" or not interval.get("start") or not interval.get("end"):
+                continue
+            match = verifier.matching_deviation(claim.get("rule"), parse_ts(interval["start"]),
+                                                parse_ts(interval["end"]))
+            if match is not None:
+                designated.add((match["rule"], match["start"]))
+        for deviation in verifier.detected:
+            if (deviation["rule"], deviation["start"]) not in designated:
                 missing.append(f"deviation {deviation['rule']} {deviation['start'][11:16]}–"
                                f"{deviation['end'][11:16]} UTC has no claim")
     return missing
@@ -189,10 +191,14 @@ def write_case(case_dir: Path | str, dossier: Dossier, rules: dict[str, Rule], c
     unresolved_rules = (detect(curve, segment(dossier.record), rules, dossier.record)["unresolved_rules"]
                         if curve else [])
 
-    case_dir = Path(case_dir)
+    # Written into a temporary folder, moved into place only when complete: a failure never
+    # leaves a half-written record that looks valid.
+    final_dir = Path(case_dir)
+    case_dir = final_dir.with_name(final_dir.name + ".partial")
     if case_dir.exists():
         shutil.rmtree(case_dir)
     (case_dir / "pieces").mkdir(parents=True)
+    journal = mask_deep(journal)  # the raw journal stays in runs/<id>.json
 
     for relative in _pieces(dossier):
         target = case_dir / "pieces" / relative
@@ -229,7 +235,11 @@ def write_case(case_dir: Path | str, dossier: Dossier, rules: dict[str, Rule], c
     manifest = {"algorithm": "sha256", "files": files}
     manifest["root"] = sha256_bytes(canonical_json({"algorithm": "sha256", "files": files}))
     write_json(case_dir / "manifest.json", manifest)
+    if final_dir.exists():
+        shutil.rmtree(final_dir)
+    case_dir.rename(final_dir)
     return manifest
+
 
 
 def verify_case(case_dir: Path | str) -> list[str]:

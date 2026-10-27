@@ -85,13 +85,16 @@ def final_json(text: str | None, keys: tuple[str, ...]) -> dict | None:
         pass
     decoder = json.JSONDecoder()
     found: list[dict] = []
-    for match in re.finditer(r"\{", text):
+    position = 0
+    while (start := text.find("{", position)) != -1:  # top-level objects only, never nested ones
         try:
-            value, _ = decoder.raw_decode(text, match.start())
+            value, end = decoder.raw_decode(text, start)
         except json.JSONDecodeError:
+            position = start + 1
             continue
         if isinstance(value, dict):
             found.append(value)
+        position = end
     with_keys = [v for v in found if any(k in v for k in keys)]
     return (with_keys or found or [None])[-1]
 
@@ -150,7 +153,10 @@ class Agent:
         if not name:
             raise ValueError("tool call without a name")
         arguments = dict(arguments)
-        self.tools.reason = arguments.pop("reason", None)
+        reason = arguments.pop("reason", None)
+        if reason is not None and not isinstance(reason, str):
+            reason = json.dumps(reason, ensure_ascii=False, default=str)
+        self.tools.reason = reason
         if name not in STAGE_TOOLS[self.tools.stage]:
             raise ValueError(f"tool {name!r} is not available at stage {self.tools.stage}")
         return getattr(self.tools, name)(**arguments)
@@ -207,7 +213,12 @@ class Agent:
         investigation = None
         if decision == "go" and entry["sensor_curve_available"]:
             self.tools.stage = "investigation"
-            notes = self.tools.convoy_notes()
+            try:
+                notes = self.tools.convoy_notes()
+            except Exception as error:
+                notes = []
+                self.tools.journal.append({"type": "error", "stage": "investigation", "tool": "convoy_notes",
+                                           "error": redact(f"{type(error).__name__}: {error}")})
             context = {"entry_record": entry,
                        "pre_departure": {"decision": decision,
                                          "accepted_claims": [c["id"] for c in self.tools.accepted]},

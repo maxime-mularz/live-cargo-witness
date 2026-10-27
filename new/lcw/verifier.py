@@ -45,7 +45,7 @@ import re
 from datetime import timedelta
 
 from . import STATUSES
-from .deviations import _applies, _out_of_bounds
+from .deviations import _applies, _out_of_bounds, detect
 from .dossier import Dossier, parse_ts
 from .phases import phase_at, segment
 from .predeparture import evaluate_rule
@@ -89,6 +89,17 @@ class Verifier:
         self.answers = {a["id"]: a for a in observations.get("handler_answers", [])}
         self.windows = {w["id"]: w for w in self.record.get("declared", {}).get("inspection_windows", [])}
         self.sampling = timedelta(minutes=self.record.get("sensor", {}).get("sampling_minutes", 5))
+        self.detected = detect(self.curve, self.phases, rules, self.record)["deviations"] if self.curve else []
+
+    def matching_deviation(self, rule_id: str, start, end) -> dict | None:
+        """The deviation found on the curve that this interval designates (start and end within
+        one sampling period), or None. A claim must be about one deviation, not a wider span."""
+        for deviation in self.detected:
+            if (deviation["rule"] == rule_id
+                    and abs(parse_ts(deviation["start"]) - start) <= self.sampling
+                    and abs(parse_ts(deviation["end"]) - end) <= self.sampling):
+                return deviation
+        return None
 
     # ------------------------------------------------------------------ public
 
@@ -246,6 +257,9 @@ class Verifier:
             return [*reasons, "deviation claim needs an interval"]
         if last < first:
             return [*reasons, "interval ends before it starts"]
+        if self.matching_deviation(rule.id, first, last) is None:
+            reasons.append(f"the interval must be one {rule.id} deviation returned by get_sensor_curve "
+                           "(same start and end)")
         inside = [item for item in segments
                   if parse_ts(item["start"]) <= first and last <= parse_ts(item["end"])]
         if not inside:
