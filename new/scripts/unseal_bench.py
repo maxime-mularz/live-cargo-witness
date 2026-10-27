@@ -10,18 +10,18 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 
 import _path  # noqa: F401
 from lcw import BENCH_DIR
 from lcw.hashing import seal_folder
 
-FREEZE = datetime(2026, 11, 3, 17, 0, tzinfo=timezone.utc)  # 6 PM Paris (UTC+1)
+FREEZE = datetime(2026, 11, 3, 17, 0, tzinfo=UTC)  # 6 PM Paris (UTC+1)
 
 
 def main() -> None:
-    if datetime.now(timezone.utc) < FREEZE and "--i-know-it-is-before-the-freeze" not in sys.argv:
+    if datetime.now(UTC) < FREEZE and "--i-know-it-is-before-the-freeze" not in sys.argv:
         raise SystemExit("The code freeze has not happened yet. The reserved bench stays sealed.")
     password = os.environ.get("RESERVED_PASSWORD")
     if not password:

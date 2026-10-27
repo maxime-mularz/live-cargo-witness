@@ -8,7 +8,7 @@ verifier later checks claims against).
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from . import models
 from .deviations import detect, values_in
@@ -26,6 +26,10 @@ MODEL_FOR_TOOL = {
     "write_case_file": "lcw.verifier + lcw.casefile",
     "convoy_notes": "Muse Voice Transcribe",
 }
+# Label used when a voice item has no recording, or in offline mode: no model was involved.
+STORED_TEXT = "stored transcript (no recording)"
+MAX_WINDOW_ROWS = 72  # raw samples returned for one interval (6 h at 5-minute sampling)
+CLAIM_KIND_FOR_STAGE = {"pre_departure": "pre_departure", "investigation": "deviation"}
 
 REASON = {"type": "string",
           "description": "One sentence: why you call this tool now (your current hypothesis). "
@@ -118,21 +122,22 @@ class Toolset:
         self.rules = rules or load_rules()
         self.journal: list[dict] = []
         self.observations: dict = {
-            "documents": {}, "crates": {}, "handler_answers": [],
+            "documents": {}, "crates": {}, "handler_answers": [], "convoy_notes": [],
             # every crate photo of the dossier must be segmented before a decision
             "expected_crates": [p.split("/")[-1].removesuffix(".png")
                                 for p in dossier.record.get("photos", [])],
         }
         self.drafts: list[dict] = []
         self.accepted: list[dict] = []
+        self.claim_stage: dict[str, str] = {}  # claim id -> stage where it was first accepted
         self.stage: str | None = None     # set by the agent loop ("pre_departure" / "investigation")
         self.reason: str | None = None    # the model's stated reason for the current call
 
-    def _log(self, tool: str, arguments: dict, result) -> None:
+    def _log(self, tool: str, arguments: dict, result, model: str | None = None) -> None:
         self.journal.append({
-            "time": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "time": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "type": "tool", "stage": self.stage, "reason": self.reason,
-            "tool": tool, "model": MODEL_FOR_TOOL[tool], "backend": self.backend,
+            "tool": tool, "model": model or MODEL_FOR_TOOL[tool], "backend": self.backend,
             "arguments": arguments, "result": result,
         })
         self.reason = None
@@ -174,12 +179,18 @@ class Toolset:
             result = {"available": True, "synthetic": self.dossier.synthetic, "samples": len(curve),
                       "phases": phases, **found}
             if start and end:
-                result["window"] = [row for row in curve
-                                    if parse_ts(start) <= parse_ts(row["timestamp"]) <= parse_ts(end)]
+                window = [row for row in curve
+                          if parse_ts(start) <= parse_ts(row["timestamp"]) <= parse_ts(end)]
+                result["window"] = window[:MAX_WINDOW_ROWS]
+                if len(window) > MAX_WINDOW_ROWS:
+                    result["window_truncated"] = (f"{len(window)} samples in the interval, first "
+                                                  f"{MAX_WINDOW_ROWS} returned: ask for a shorter interval")
         self._log("get_sensor_curve", {"start": start, "end": end}, result)
         return result
 
     def lookup_rule(self, rule: str) -> dict:
+        if rule not in self.rules:
+            raise KeyError(f"no rule {rule!r} (R01 to R10)")
         card = self.rules[rule].raw
         self._log("lookup_rule", {"rule": rule}, card)
         return card
@@ -196,17 +207,14 @@ class Toolset:
         if chosen is None:
             chosen = next((a for a in self.dossier.handler_answers() if a.get("default")),
                           {"id": "H0", "answer": "No answer recorded."})
-        audio = self._audio(chosen)
-        if self.backend == "live" and audio:
-            text = models.transcribe(audio)
-        else:
-            text = chosen["answer"]
+        text, model = self._voice_text(chosen, chosen["answer"])
         result = {"id": chosen["id"], "question": question, "asked_start": start, "asked_end": end,
                   # the interval the recorded answer is about (None for the default answer)
                   "start": chosen.get("start"), "end": chosen.get("end"),
-                  "default": bool(chosen.get("default")), "answer": text}
+                  "default": bool(chosen.get("default")), "answer": text,
+                  "transcribed": self.backend == "live" and model == MODEL_FOR_TOOL["ask_handler"]}
         self.observations["handler_answers"].append(result)
-        self._log("ask_handler", {"question": question, "start": start, "end": end}, result)
+        self._log("ask_handler", {"question": question, "start": start, "end": end}, result, model)
         return result
 
     def _audio(self, item: dict):
@@ -220,17 +228,27 @@ class Toolset:
                 return candidate
         return None
 
+    def _voice_text(self, item: dict, stored: str) -> tuple[str, str]:
+        """Text of a note or answer and the label of what produced it."""
+        audio = self._audio(item)
+        if audio is None:
+            return stored, STORED_TEXT        # no recording: no model involved, live or offline
+        if self.backend == "live":
+            return models.transcribe(audio), MODEL_FOR_TOOL["convoy_notes"]
+        return stored, MODEL_FOR_TOOL["convoy_notes"]  # offline stand-in for the transcription
+
     def convoy_notes(self) -> list[dict]:
         """Convoy attendant's notes, transcribed (Muse Voice Transcribe in live mode when the
-        note has an audio file; the stored transcript otherwise)."""
-        notes = []
+        note has a recording; the stored transcript otherwise). The text the agent saw is kept
+        in ``observations`` so the verifier and the record use the same words."""
+        notes, models_used = [], set()
         for note in self.dossier.convoy_notes():
-            text = note["text"]
-            audio = self._audio(note)
-            if self.backend == "live" and audio:
-                text = models.transcribe(audio)
-            notes.append({"id": note["id"], "time": note["time"], "text": text})
-        self._log("convoy_notes", {}, notes)
+            text, model = self._voice_text(note, note["text"])
+            models_used.add(model)
+            notes.append({"id": note["id"], "time": note["time"], "text": text,
+                          "transcribed": self.backend == "live" and model == MODEL_FOR_TOOL["convoy_notes"]})
+        self.observations["convoy_notes"] = notes
+        self._log("convoy_notes", {}, notes, " + ".join(sorted(models_used)) or STORED_TEXT)
         return notes
 
     def entry_record(self) -> dict:
@@ -254,13 +272,38 @@ class Toolset:
         back with their reasons so the agent can correct them."""
         from .verifier import Verifier
 
-        report = Verifier(self.dossier, self.rules, self.observations).check(claims)
+        if not isinstance(claims, list) or not all(isinstance(c, dict) for c in claims):
+            raise ValueError("claims must be a list of objects")
+        # Stage rules, checked before the verifier: stage 1 records pre-departure claims only,
+        # stage 2 deviation claims only, and an id accepted at one stage is never reused at the other.
+        early, to_check = [], []
+        kind = CLAIM_KIND_FOR_STAGE.get(self.stage)
+        seen: set[str] = set()
+        for claim in claims:
+            reasons = []
+            claim_id = str(claim.get("id") or "")
+            if not claim_id:
+                reasons.append("claim needs an id")
+            elif claim_id in seen:
+                reasons.append(f"id {claim_id} is used twice in this submission")
+            seen.add(claim_id)
+            if kind and claim.get("kind") != kind:
+                reasons.append(f"only {kind!r} claims can be recorded at stage {self.stage}")
+            first_stage = self.claim_stage.get(claim_id)
+            if first_stage and first_stage != self.stage:
+                reasons.append(f"id {claim_id} was already used at stage {first_stage}: pick a new id")
+            (early if reasons else to_check).append({"claim": claim, "reasons": reasons} if reasons else claim)
+
+        report = Verifier(self.dossier, self.rules, self.observations).check(to_check)
+        rejected = early + report["rejected"]
         accepted_ids = {c["id"] for c in report["accepted"]}
         self.accepted = [c for c in self.accepted if c["id"] not in accepted_ids]
         self.accepted += report["accepted"]
+        for claim_id in accepted_ids:
+            self.claim_stage.setdefault(claim_id, self.stage)
         summary = {"accepted": sorted(accepted_ids),
                    "rejected": [{"id": r["claim"].get("id"), "reasons": r["reasons"]}
-                                for r in report["rejected"]]}
+                                for r in rejected]}
         self._log("write_case_file", {"claims": [c.get("id") for c in claims]}, summary)
         return summary
 

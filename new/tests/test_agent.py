@@ -1,14 +1,13 @@
 import json
 
+from conftest import DEV, dossier_dirs
+from fake_model import ScriptedClient
 from lcw.agent import Agent
 from lcw.casefile import verify_case
 from lcw.dossier import Dossier, load_json
 from lcw.runner import run_bench, run_dossier
 from lcw.score import score_bench
 from lcw.tools import Toolset
-
-from conftest import DEV, dossier_dirs
-from fake_model import ScriptedClient
 
 
 def folder_of(category):
@@ -36,7 +35,7 @@ def test_rejected_claim_is_fixed_and_shown_in_journal(tmp_path):
     assert result["case"] == "written"
     page = (tmp_path / "cases" / result["dossier_id"] / "journal.html").read_text()
     assert "rejected C1" in page and "number 37" in page
-    assert "SAM 3.1 · offline stand-in" in page and "Muse Voice Transcribe · offline stand-in" in page
+    assert "SAM 3.1 · offline stand-in" in page and "stored transcript (no recording)" in page
     assert "Offline run" in page and "scripted test client" in page
     assert "SYNTHETIC" in page and "Ground handler asked" in page
 
@@ -96,7 +95,7 @@ def test_non_json_final_answer_is_an_error(tmp_path):
             return {"content": "All good, ship it!", "tool_calls": []}
 
     result = run_dossier(folder, tmp_path, client=Chatty(), backend="offline")
-    assert result["errors"] and result["case"] == "not written"
+    assert result["errors"] and result["case"].startswith("not written")
 
 
 def test_agent_never_sees_ground_truth(tmp_path):

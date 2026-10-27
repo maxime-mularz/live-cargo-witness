@@ -6,3 +6,4 @@ new/results/
 !new/results/.gitkeep
 *.egg-info/
 .venv/
+.private-names

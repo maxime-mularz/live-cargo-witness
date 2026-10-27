@@ -16,7 +16,7 @@ from pathlib import Path
 import _path  # noqa: F401
 from lcw import BENCH_DIR, models
 from lcw.dossier import Dossier, load_json
-from lcw.env import load_dotenv
+from lcw.env import load_dotenv, redact
 from lcw.tools import TOOL_SCHEMAS
 
 SYSTEM = ("You are being tested on tool calling. Call exactly the tool you are asked to call, "
@@ -44,6 +44,23 @@ CASES = [
 ]
 
 
+def same(a, b) -> bool:
+    """Strict equality: 1 is not 1.0, True is not 1, "3" is not 3 (Python's == says otherwise)."""
+    if type(a) is not type(b):
+        return False
+    if isinstance(a, dict):
+        return a.keys() == b.keys() and all(same(a[k], b[k]) for k in a)
+    if isinstance(a, list):
+        return len(a) == len(b) and all(same(x, y) for x, y in zip(a, b, strict=True))
+    return a == b
+
+
+def difference(read, truth) -> str:
+    if read == truth and not same(read, truth):
+        return f" (type: read {type(read).__name__}, expected {type(truth).__name__})"
+    return ""
+
+
 def part_a() -> int:
     passed = 0
     for name, expected, instruction in CASES:
@@ -64,10 +81,11 @@ def part_a() -> int:
                     problems.append("arguments are not a JSON object")
                 else:
                     for key, value in expected.items():
-                        if arguments.get(key) != value:
-                            problems.append(f"{key} = {json.dumps(arguments.get(key))[:80]}")
+                        if not same(arguments.get(key), value):
+                            problems.append(f"{key} = {json.dumps(arguments.get(key))[:80]}"
+                                            f"{difference(arguments.get(key), value)}")
         except Exception as error:  # report, keep testing
-            problems = [f"{type(error).__name__}: {error}"]
+            problems = [f"{type(error).__name__}: {redact(error)}"]
         ok = not problems
         passed += ok
         print(f"  [{'PASS' if ok else 'FAIL'}] {name:18s} {time.time() - started:5.1f}s  {'; '.join(problems)}")
@@ -81,14 +99,14 @@ def compare(dossier_dir: Path, document: str, fields: list[str]) -> bool:
     try:
         read = models.read_document_image(image, document)
     except Exception as error:
-        print(f"  [FAIL] {dossier.id}/{document}: {type(error).__name__}: {error}")
+        print(f"  [FAIL] {dossier.id}/{document}: {type(error).__name__}: {redact(error)}")
         return False
     ok = True
     for field in fields:
-        good = read.get(field) == truth[field]
+        good = same(read.get(field), truth[field])
         ok &= good
         print(f"  [{'ok' if good else 'KO'}] {dossier.id}/{document}.{field}: read {json.dumps(read.get(field))} "
-              f"/ truth {json.dumps(truth[field])}")
+              f"/ truth {json.dumps(truth[field])}{difference(read.get(field), truth[field])}")
     return ok
 
 
@@ -106,8 +124,9 @@ def main() -> None:
                     None)
     awb_ok = compare(signed, "awb", ["awb_number", "head_count", "handling_codes", "temperature_range_c"])
     cert_ok = compare(unsigned, "certification", ["head_count", "signed"]) if unsigned else True
-    print(f"\nCA-02: {'PASS' if a >= 4 and awb_ok else 'FAIL'} (tool calls {a}/5, air waybill "
-          f"{'read' if awb_ok else 'not read'} correctly, unsigned certification {'detected' if cert_ok else 'missed'})")
+    verdict = "PASS" if a >= 4 and awb_ok else "FAIL"
+    print(f"\nCA-02: {verdict} (tool calls {a}/5, air waybill {'read' if awb_ok else 'not read'} correctly, "
+          f"unsigned certification {'detected' if cert_ok else 'missed'})")
     sys.exit(0 if a >= 4 and awb_ok else 1)
 
 

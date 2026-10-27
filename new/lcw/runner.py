@@ -13,6 +13,7 @@ from pathlib import Path
 from .agent import Agent, ModelClient
 from .casefile import RejectedClaims, write_case
 from .dossier import Dossier, write_json
+from .env import redact
 from .tools import Toolset
 
 
@@ -24,18 +25,14 @@ def run_dossier(folder: Path | str, out_dir: Path | str, client: ModelClient | N
     run = Agent(tools, client=client, max_steps=max_steps).run()
     result = run.result
 
-    case_status = "not written"
-    if run.pre_departure.final is not None and result["decision_matches_readings"]:
+    case_status = case_refusal(run)
+    if case_status is None:
         try:
             write_case(out_dir / "cases" / dossier.id, dossier, tools.rules, tools.accepted,
                        tools.observations, run.deterministic_pre_departure, tools.journal)
             case_status = "written"
-        except RejectedClaims as error:
+        except (RejectedClaims, ValueError) as error:  # IncompleteCase is a ValueError
             case_status = f"refused: {error}"
-        except ValueError as error:
-            case_status = f"refused: {error}"
-    elif run.pre_departure.final is not None:
-        case_status = "refused: the agent's decision does not match its own readings"
 
     result["case"] = case_status
     write_json(out_dir / "results" / f"{dossier.id}.json", result)
@@ -52,6 +49,20 @@ def run_dossier(folder: Path | str, out_dir: Path | str, client: ModelClient | N
     return result
 
 
+def case_refusal(run) -> str | None:
+    """Why the record must not be written for this run (None = it may be written)."""
+    if run.result["errors"]:
+        return "not written: the run did not finish cleanly (" + "; ".join(run.result["errors"]) + ")"
+    if run.pre_departure.final is None or run.result["phase1"]["decision"] is None:
+        return "not written: no pre-departure decision"
+    if not run.result["decision_matches_readings"]:
+        return "refused: the agent's decision does not match its own readings"
+    if run.result["phase1"]["decision"] == "go" and run.investigation is not None \
+            and run.investigation.final is None:
+        return "not written: the investigation has no final answer"
+    return None
+
+
 def run_bench(bench_dir: Path | str, out_dir: Path | str, client_factory=None,
               backend: str = "live", only: list[str] | None = None) -> list[dict]:
     """Run every dossier of a bench. ``client_factory(folder)`` builds a client per dossier
@@ -60,6 +71,13 @@ def run_bench(bench_dir: Path | str, out_dir: Path | str, client_factory=None,
     for folder in sorted(p for p in Path(bench_dir).iterdir() if (p / "dossier.json").exists()):
         if only and folder.name not in only:
             continue
-        client = client_factory(folder) if client_factory else None
-        results.append(run_dossier(folder, out_dir, client=client, backend=backend))
+        try:
+            client = client_factory(folder) if client_factory else None
+            results.append(run_dossier(folder, out_dir, client=client, backend=backend))
+        except Exception as error:  # one broken dossier must not stop the bench
+            result = {"dossier_id": folder.name, "phase1": None, "investigation": None,
+                      "errors": [f"run crashed: {type(error).__name__}: {redact(error)}"],
+                      "case": "not written"}
+            write_json(Path(out_dir) / "results" / f"{folder.name}.json", result)
+            results.append(result)
     return results

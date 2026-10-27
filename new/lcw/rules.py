@@ -44,10 +44,9 @@ def _validate(card: dict, path: Path) -> None:
     if card["status"] not in ("active", "disabled"):
         raise ValueError(f"{path.name}: unknown status {card['status']!r}")
     threshold = card["threshold"]
-    if threshold is not None:
-        # Rule cards never hard-code a value: a threshold always points into the dossier.
-        if set(threshold) != {"from", "path"} or threshold["from"] != "dossier":
-            raise ValueError(f"{path.name}: threshold must be {{from: dossier, path: ...}}")
+    # Rule cards never hard-code a value: a threshold always points into the dossier.
+    if threshold is not None and (set(threshold) != {"from", "path"} or threshold["from"] != "dossier"):
+        raise ValueError(f"{path.name}: threshold must be {{from: dossier, path: ...}}")
 
 
 def load_rules(rules_dir: Path | str = RULES_DIR) -> dict[str, Rule]:

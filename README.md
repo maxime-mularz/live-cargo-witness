@@ -63,7 +63,8 @@ Everything under [`new/`](new/) was written during the event (see the dated git 
 | Investigation journal page | `new/lcw/journal_page.py` | done |
 | Meta model adapters | `new/lcw/models.py` | in progress |
 | Dossier format specification | `new/bench/FORMAT.md` | done |
-| Reserved bench (5 independent dossiers, encrypted until the code freeze) | `new/bench/reserved.*` | in progress |
+| Reserved bench (5 independent dossiers, encrypted until the code freeze) | `new/bench/reserved.*` | sealed, opened after the freeze |
+| Quality gates: lint, cross-file consistency tests, pre-push release check | `pyproject.toml`, `new/tests/test_consistency.py`, `new/scripts/check_release.py` | done |
 
 ## Evaluation
 
@@ -83,7 +84,9 @@ document or photo is used.
 
 ```bash
 pip install -r requirements.txt
+ruff check new
 python -m pytest new/tests -q
+python new/scripts/check_release.py        # before every push
 python new/scripts/generate_bench.py
 python new/scripts/score_bench.py new/bench/dev new/results/dev
 python new/scripts/verify_case.py <case_dir>

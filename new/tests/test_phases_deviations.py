@@ -1,8 +1,9 @@
+from itertools import pairwise
+
+from conftest import dossier_dirs
 from lcw.deviations import detect
 from lcw.dossier import Dossier, load_json, parse_ts
 from lcw.phases import segment
-
-from conftest import dossier_dirs
 
 
 def test_phases_are_contiguous():
@@ -11,7 +12,7 @@ def test_phases_are_contiguous():
         names = [p["name"] for p in phases]
         assert names[0] == "ground_departure" and names[-1] == "ground_arrival"
         assert "stopover" in names and names.count("cruise") == 2
-        for left, right in zip(phases, phases[1:]):
+        for left, right in pairwise(phases):
             assert left["end"] == right["start"]
 
 

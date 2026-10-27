@@ -6,7 +6,7 @@ with Meta's models) and must never read expected.json.
 """
 from datetime import timedelta
 
-from lcw.dossier import Dossier, format_ts, load_json, parse_ts
+from lcw.dossier import Dossier, load_json, parse_ts
 from lcw.predeparture import evaluate
 from lcw.rules import load_rules
 from lcw.tools import Toolset
@@ -47,7 +47,7 @@ def deviation_claim(tools: Toolset, index: int, deviation: dict, status: str, ex
         "statement": text,
         "evidence": [{"type": "curve_segment", "series": series,
                       "start": deviation["start"], "end": deviation["end"]},
-                     {"type": "dossier_field", "path": threshold_path}] + extra,
+                     {"type": "dossier_field", "path": threshold_path}, *extra],
     }
 
 

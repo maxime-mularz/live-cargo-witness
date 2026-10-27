@@ -11,6 +11,8 @@ from __future__ import annotations
 import html
 import json
 
+from .vocab import mask_forbidden
+
 STATUS_LABEL = {
     "explained_compliant": "Explained, compliant",
     "explained_rule_exceeded": "Explained, rule exceeded",
@@ -129,6 +131,19 @@ def _summary(entry: dict) -> str:
     return _e(json.dumps(result, ensure_ascii=False, default=str)[:300])
 
 
+def _rejected_then_fixed(tool_entries: list[dict]) -> int:
+    """Claim ids the verifier rejected and that were accepted in a later submission."""
+    rejected: set[str] = set()
+    fixed: set[str] = set()
+    for entry in tool_entries:
+        if entry.get("tool") != "write_case_file":
+            continue
+        report = entry.get("result") or {}
+        fixed |= set(report.get("accepted", [])) & rejected
+        rejected |= {str(item.get("id")) for item in report.get("rejected", [])}
+    return len(fixed)
+
+
 def render(pv: dict, journal: list[dict]) -> str:
     stage_names = {"pre_departure": "Stage 1 — pre-departure check (connected)",
                    "investigation": "Stage 2 — investigation at first network contact"}
@@ -140,8 +155,9 @@ def render(pv: dict, journal: list[dict]) -> str:
             label = stage_names.get(stage, "Setup")
             rows.append(f'<tr class="stage"><td colspan="5">{_e(label)}</td></tr>')
         if entry.get("type") == "message":
-            rows.append(f'<tr><td></td><td colspan="4"><b>Model answer</b> {_badge(entry.get("model"))}'
-                        f'<div class="quote">{_e(entry.get("content"))}</div></td></tr>')
+            rows.append(f'<tr><td></td><td colspan="4"><b>Model answer</b> {_badge(entry.get("model"))} '
+                        f'<span class="small">unverified model text</span>'
+                        f'<div class="quote">{_e(mask_forbidden(entry.get("content")))}</div></td></tr>')
             continue
         if entry.get("type") == "error":
             rows.append(f'<tr><td></td><td colspan="4" class="err">Tool error on {_e(entry.get("tool"))}: '
@@ -151,7 +167,7 @@ def render(pv: dict, journal: list[dict]) -> str:
         reason = entry.get("reason")
         rows.append(
             f"<tr><td>{step}</td>"
-            f'<td class="reason">{_e(reason) if reason else "<span class=small>—</span>"}</td>'
+            f'<td class="reason">{_e(mask_forbidden(reason)) if reason else "<span class=small>—</span>"}</td>'
             f"<td><code>{_e(entry.get('tool'))}</code></td>"
             f'<td class="hide-sm">{_badge(entry.get("model"), entry.get("backend"))}</td>'
             f"<td>{_summary(entry)}</td></tr>")
@@ -161,9 +177,9 @@ def render(pv: dict, journal: list[dict]) -> str:
     counts = {}
     for claim in deviations:
         counts[claim["status"]] = counts.get(claim["status"], 0) + 1
-    asked = sum(1 for e in journal if e.get("tool") == "ask_handler")
-    rejected = sum(len((e.get("result") or {}).get("rejected", [])) for e in journal
-                   if e.get("tool") == "write_case_file")
+    tool_entries = [e for e in journal if e.get("type") == "tool"]
+    asked = sum(1 for e in tool_entries if e.get("tool") == "ask_handler")
+    fixed = _rejected_then_fixed(tool_entries)
     offline = any(e.get("backend") == "offline" for e in journal if e.get("type") == "tool")
     offline_note = ('<p class="small"><b>Offline run:</b> tool results come from the dossier\'s '
                     'ground-truth files, not from the Meta models. Plumbing check only.</p>'
@@ -196,9 +212,11 @@ every step chosen by the agent, every claim checked by a non-AI verifier.</p>
  <div class="card"><b>Pre-departure</b><span class="{_e(decision)}">{_e(decision.upper())}</span></div>
  <div class="card"><b>Deviations recorded</b><span>{len(deviations)}</span></div>
  <div class="card"><b>Ground handler asked</b><span>{asked}</span></div>
- <div class="card"><b>Claims rejected, then fixed</b><span>{rejected}</span></div>
+ <div class="card"><b>Claims rejected, then fixed</b><span>{fixed}</span></div>
 </div>
 <h2>Steps</h2>
+<p class="small">Hypotheses are the model's own words, shown as stated and not verified;
+only the claims of the record below are checked by the verifier.</p>
 <table><thead><tr><th>#</th><th>Hypothesis</th><th>Tool</th><th class="hide-sm">Model</th>
 <th>What came back</th></tr></thead><tbody>
 {''.join(rows)}

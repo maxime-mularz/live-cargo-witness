@@ -1,10 +1,9 @@
 from collections import Counter
 
+from conftest import dossier_dirs
 from lcw.dossier import load_json
 from lcw.hashing import sha256_file
 from lcw.synth import build_bench
-
-from conftest import dossier_dirs
 
 
 def test_bench_composition(dev_dir):

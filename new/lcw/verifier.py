@@ -69,6 +69,14 @@ NUMBER_WORDS = re.compile(
     r"quinze|seize|vingt|trente|quarante|cinquante|soixante|cent|mille|douzaine)s?\b", re.IGNORECASE)
 
 
+def notes_seen(dossier: Dossier, observations: dict) -> dict[str, dict]:
+    """Convoy notes by id, with the text the agent was given (the live transcript when a
+    recording was transcribed), falling back to the stored notes of the dossier."""
+    notes = {n["id"]: n for n in dossier.convoy_notes()}
+    notes.update({n["id"]: n for n in observations.get("convoy_notes") or []})
+    return notes
+
+
 class Verifier:
     def __init__(self, dossier: Dossier, rules: dict[str, Rule], observations: dict):
         self.dossier = dossier
@@ -77,7 +85,7 @@ class Verifier:
         self.observations = observations
         self.curve = dossier.curve() or []
         self.phases = segment(self.record) if self.curve else []
-        self.notes = {n["id"]: n for n in dossier.convoy_notes()}
+        self.notes = notes_seen(dossier, observations)
         self.answers = {a["id"]: a for a in observations.get("handler_answers", [])}
         self.windows = {w["id"]: w for w in self.record.get("declared", {}).get("inspection_windows", [])}
         self.sampling = timedelta(minutes=self.record.get("sensor", {}).get("sampling_minutes", 5))
@@ -132,7 +140,7 @@ class Verifier:
 
     # ------------------------------------------------------------------ evidence
 
-    def _resolve(self, item: dict, grounded: "_Grounding") -> str | None:
+    def _resolve(self, item: dict, grounded: _Grounding) -> str | None:
         kind = item.get("type")
         if kind == "curve_segment":
             if not self.curve:
@@ -230,14 +238,14 @@ class Verifier:
         segments = [e for e in evidence if e.get("type") == "curve_segment"
                     and e.get("series") == rule.check["series"]]
         if not segments:
-            return reasons + [f"a curve segment of {rule.check['series']} must be cited"]
+            return [*reasons, f"a curve segment of {rule.check['series']} must be cited"]
         interval = claim.get("interval") or {}
         try:
             first, last = parse_ts(interval["start"]), parse_ts(interval["end"])
         except (KeyError, ValueError, AttributeError):
-            return reasons + ["deviation claim needs an interval"]
+            return [*reasons, "deviation claim needs an interval"]
         if last < first:
-            return reasons + ["interval ends before it starts"]
+            return [*reasons, "interval ends before it starts"]
         inside = [item for item in segments
                   if parse_ts(item["start"]) <= first and last <= parse_ts(item["end"])]
         if not inside:
@@ -273,9 +281,8 @@ class Verifier:
             if not any(overlaps(parse_ts(w["start"]), parse_ts(w["end"])) for w in windows):
                 reasons.append("a dismissed false positive needs a declared inspection window "
                                "covering the interval")
-        elif status == "indeterminate":
-            if not answers:
-                reasons.append("'indeterminate' is only allowed after asking the handler")
+        elif status == "indeterminate" and not answers:
+            reasons.append("'indeterminate' is only allowed after asking the handler")
         return reasons
 
     # ------------------------------------------------------------------ pre-departure

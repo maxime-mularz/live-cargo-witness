@@ -48,7 +48,12 @@ new/
 Built offline (no network needed, fully tested):
 - `lcw/synth.py` — dossier generator (EF-18): synthetic curves, fake documents, crate images,
   voice-note transcripts, scripted handler answers, `expected.json`.
+- `lcw/dossier.py` — dossier loader and UTC time helpers; refuses to open `expected.json`.
 - `lcw/rules.py` — rule cards loader.
+- `lcw/predeparture.py` — deterministic evaluation of R01–R06 on what the models read.
+- `lcw/tools.py` — the agent's tools, their JSON schemas, offline stand-ins, journal logging.
+- `lcw/vocab.py` — forbidden (veterinary) vocabulary, matched by stems.
+- `lcw/env.py` — minimal `.env` loader (keys never printed).
 - `lcw/phases.py` — flight phase segmentation from declared hours (EF-08, fallback mode).
 - `lcw/deviations.py` — deterministic deviation detection on a curve (EF-09).
 - `lcw/verifier.py` — non-AI verifier (EF-14).
@@ -91,14 +96,29 @@ python new/scripts/test_ca02.py                     # CA-02: tool calling + docu
 python new/scripts/run_agent.py new/bench/dev/DEV-02            # one dossier, live (keys in .env)
 python new/scripts/run_bench.py new/bench/dev                   # whole bench, live, then scored
 python new/scripts/run_bench.py new/bench/dev --dry-run         # plumbing check, no model
+python new/scripts/score_bench.py new/bench/dev <out>/results   # re-score existing results
+python new/scripts/seal_bench.py <folder> [--check <seal_file>] # seal of a bench folder
 python new/scripts/recording_list.py DEV-02 DEV-07  # sentences to record (voice/audio/<id>.m4a)
 python new/scripts/generate_bench.py                # regenerate bench/dev (deterministic seeds)
 python new/scripts/verify_case.py <case_dir>        # recompute the PV hashes
 python new/scripts/unseal_bench.py                  # AFTER the freeze only: decrypt + check the seal
+python new/scripts/check_release.py                 # before every push: lint, tests, secrets, names, seal
 ```
 
 `--dry-run` uses a scripted client that reads `expected.json`: it checks the plumbing and proves
 nothing about the agent. Never publish a dry-run score.
+
+## Quality and consistency (skills in `.claude/skills/`)
+
+- `lcw-code-quality` — the definition of done for any code change: test first, `ruff check new`,
+  `pytest`, an independent review for `verifier.py`, `agent.py`, `tools.py`, `casefile.py`.
+- `lcw-consistency` — the map of what must change together (tools, statuses, evidence types, rule
+  cards, prompts, FORMAT.md, this file, README). `new/tests/test_consistency.py` enforces most of it.
+- `lcw-release-check` — before every push: `python new/scripts/check_release.py`. Private names
+  (real shippers, carriers, handlers) are listed in the git-ignored `.private-names`, one per line;
+  create it on each machine, never commit it.
+
+Lint config lives in `pyproject.toml` (ruff, line length 120). Never silence a rule to make a check pass.
 
 ## Priorities if time runs short (cut in this order)
 

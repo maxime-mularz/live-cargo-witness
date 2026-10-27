@@ -1,10 +1,9 @@
 import pytest
 
-from lcw.casefile import RejectedClaims, verify_case, write_case
-from lcw.dossier import load_json
-
 from conftest import dossier_dirs
 from helpers import scripted_run
+from lcw.casefile import RejectedClaims, verify_case, write_case
+from lcw.dossier import load_json
 
 
 def handler_folder():

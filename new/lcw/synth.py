@@ -14,7 +14,7 @@ from __future__ import annotations
 import math
 import random
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -112,7 +112,7 @@ def render_form(title: str, rows: list[tuple[str, str, str]], footer: str | None
     return _watermark(image, "SPECIMEN · FICTITIOUS"), fields
 
 
-def build_documents(spec: "DossierSpec") -> dict[str, tuple[Image.Image, dict]]:
+def build_documents(spec: DossierSpec) -> dict[str, tuple[Image.Image, dict]]:
     """Render the three shipping documents with their ground truth."""
     documents = {}
     low, high = TEMP_RANGE
@@ -232,7 +232,7 @@ def render_crate(crate_id: str, awb_on_crate: str, label: bool, arrows: str | No
     jitter = rng.randint(-3, 3)
     image = image.rotate(jitter, fillcolor=(150, 150, 145))
     truth = {"photo": crate_id, "synthetic": True, "features": features,
-             "note": "bboxes given before a rotation of %d degrees" % jitter}
+             "note": f"bboxes given before a rotation of {jitter} degrees"}
     return image, truth
 
 
@@ -250,13 +250,13 @@ class Incident:
 
 def generate_curve(schedule: dict, incidents: list[Incident], rng: random.Random) -> list[dict]:
     low, high = TEMP_RANGE
-    start = datetime.strptime(schedule["loading_start"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-    end = datetime.strptime(schedule["unloading_end"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    start = datetime.strptime(schedule["loading_start"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+    end = datetime.strptime(schedule["unloading_end"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
     record = {"schedule": schedule, "phase_model": PHASE_MODEL}
     phases = segment(record)
     spikes = []
     for key, sign in (("takeoff_1", 1), ("takeoff_2", 1), ("landing_1", -1), ("landing_2", -1)):
-        moment = datetime.strptime(schedule[key], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        moment = datetime.strptime(schedule[key], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
         spikes.append(moment + timedelta(minutes=5 * sign))
 
     rows = []
@@ -349,7 +349,7 @@ def _schedule(day: datetime, rng: random.Random) -> dict:
 
 
 def _ts(value: str) -> datetime:
-    return datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    return datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
 
 
 def build_dossier(spec: DossierSpec, out_dir: Path, day: datetime) -> dict:
@@ -555,7 +555,7 @@ def build_bench(out_dir: Path, seed: int = 20261027, prefix: str = "DEV") -> lis
     rng.shuffle(specs)
     out_dir.mkdir(parents=True, exist_ok=True)
     expected = []
-    base_day = datetime(2026, 10, 1, tzinfo=timezone.utc)
+    base_day = datetime(2026, 10, 1, tzinfo=UTC)
     for index, (category, variant) in enumerate(specs, start=1):
         spec = DossierSpec(dossier_id=f"{prefix}-{index:02d}", category=category, variant=variant,
                            seed=seed + index)

@@ -1,4 +1,4 @@
-from lcw.rules import load_rules, resolve_threshold
+from lcw.rules import resolve_threshold
 
 
 def test_ten_active_cards(rules):

@@ -10,23 +10,25 @@
     manifest.json    SHA-256 of every file above + the record's root hash
 
 Anyone can recompute the hashes with ``new/scripts/verify_case.py``. Only verified claims enter
-the record: ``write_case`` re-runs the verifier and refuses any rejected claim.
+the record: ``write_case`` re-runs the verifier and refuses any rejected claim. It also refuses
+an incomplete record: every violated pre-departure rule and every deviation found on the curve
+must be covered by a verified claim (``missing_claims``).
 """
 
 from __future__ import annotations
 
 import shutil
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
-from .dossier import Dossier, write_json
 from .deviations import detect
+from .dossier import Dossier, parse_ts, write_json
 from .hashing import canonical_json, sha256_bytes, sha256_file
 from .journal_page import render as render_journal
 from .phases import segment
 from .predeparture import evaluate
 from .rules import Rule
-from .verifier import Verifier
+from .verifier import Verifier, notes_seen
 
 STATUS_LABEL = {
     "explained_compliant": "Explained, compliant",
@@ -43,6 +45,41 @@ class RejectedClaims(Exception):
         self.rejected = rejected
 
 
+class IncompleteCase(ValueError):
+    def __init__(self, missing: list[str]):
+        super().__init__("incomplete record: " + "; ".join(missing))
+        self.missing = missing
+
+
+def _overlaps(a_start: str, a_end: str, b_start: str, b_end: str) -> bool:
+    return parse_ts(a_start) <= parse_ts(b_end) and parse_ts(a_end) >= parse_ts(b_start)
+
+
+def missing_claims(dossier: Dossier, rules: dict[str, Rule], claims: list[dict],
+                   observations: dict) -> list[str]:
+    """What the record would leave out: violated pre-departure rules without a 'violated'
+    claim, and deviations detected on the curve without a deviation claim overlapping them."""
+    missing = []
+    pre = evaluate(rules, observations)
+    for rule_id in pre.get("violated_rules", []):
+        if not any(c.get("kind") == "pre_departure" and c.get("rule") == rule_id
+                   and c.get("status") == "violated" for c in claims):
+            missing.append(f"{rule_id} is violated but has no claim")
+    curve = dossier.curve()
+    if pre["decision"] == "go" and curve:
+        found = detect(curve, segment(dossier.record), rules, dossier.record)["deviations"]
+        for deviation in found:
+            covered = any(c.get("kind") == "deviation" and c.get("rule") == deviation["rule"]
+                          and c.get("interval")
+                          and _overlaps(c["interval"]["start"], c["interval"]["end"],
+                                        deviation["start"], deviation["end"])
+                          for c in claims)
+            if not covered:
+                missing.append(f"deviation {deviation['rule']} {deviation['start'][11:16]}–"
+                               f"{deviation['end'][11:16]} UTC has no claim")
+    return missing
+
+
 def _pieces(dossier: Dossier) -> list[str]:
     record = dossier.record
     pieces = ["dossier.json"]
@@ -56,7 +93,7 @@ def _pieces(dossier: Dossier) -> list[str]:
 
 def _basis(claim: dict, dossier: Dossier, observations: dict) -> list[str]:
     """Human-readable list of what a claim rests on (shown in the record)."""
-    notes = {n["id"]: n for n in dossier.convoy_notes()}
+    notes = notes_seen(dossier, observations)
     answers = {a["id"]: a for a in observations.get("handler_answers", [])}
     windows = {w["id"]: w for w in dossier.record.get("declared", {}).get("inspection_windows", [])}
     basis = []
@@ -71,10 +108,13 @@ def _basis(claim: dict, dossier: Dossier, observations: dict) -> list[str]:
         elif kind == "crate_feature":
             basis.append(f"{item['photo']}: {item['feature']} (as segmented)")
         elif kind == "voice_note" and item["id"] in notes:
-            basis.append(f"Convoy note {item['id']} ({notes[item['id']]['time'][11:16]} UTC): "
-                         f"\u201c{notes[item['id']]['text']}\u201d")
+            note = notes[item["id"]]
+            how = ", transcribed" if note.get("transcribed") else ""
+            basis.append(f"Convoy note {item['id']} ({note['time'][11:16]} UTC{how}): \u201c{note['text']}\u201d")
         elif kind == "handler_answer" and item["id"] in answers:
-            basis.append(f"Ground handler answer {item['id']}: \u201c{answers[item['id']]['answer']}\u201d")
+            answer = answers[item["id"]]
+            how = " (transcribed)" if answer.get("transcribed") else ""
+            basis.append(f"Ground handler answer {item['id']}{how}: \u201c{answer['answer']}\u201d")
         elif kind == "inspection_window" and item["id"] in windows:
             window = windows[item["id"]]
             basis.append(f"Declared inspection {item['id']} ({window['start'][11:16]}–{window['end'][11:16]} UTC): "
@@ -142,6 +182,9 @@ def write_case(case_dir: Path | str, dossier: Dossier, rules: dict[str, Rule], c
         raise ValueError(f"pre-departure decision {pre_departure.get('decision')!r} does not match "
                          f"the readings ({recomputed['decision']!r})")
     pre_departure = recomputed
+    missing = missing_claims(dossier, rules, claims, observations)
+    if missing:
+        raise IncompleteCase(missing)
     curve = dossier.curve()
     unresolved_rules = (detect(curve, segment(dossier.record), rules, dossier.record)["unresolved_rules"]
                         if curve else [])
@@ -163,7 +206,7 @@ def write_case(case_dir: Path | str, dossier: Dossier, rules: dict[str, Rule], c
         "synthetic": dossier.synthetic,
         "awb_number": observations.get("documents", {}).get("awb", {}).get("awb_number"),
         "route": " → ".join(route.get(k, "?") for k in ("origin", "stopover", "destination")),
-        "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "created_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "pre_departure": {"decision": pre_departure["decision"],
                           "violated_rules": pre_departure.get("violated_rules", [])},
         "claims": [dict(c, basis=_basis(c, dossier, observations)) for c in claims],

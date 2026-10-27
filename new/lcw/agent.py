@@ -8,7 +8,9 @@ Two stages, as in real life:
    sensor curve, convoy notes, ground handler when needed, one claim per deviation.
 
 The model (Muse Spark Open in production) chooses every tool call. The loop only dispatches
-calls, feeds results back, and stops when the model answers without a tool call.
+calls, feeds results back, and stops when the model answers without a tool call. Malformed model
+output (missing tool name, arguments as a JSON string, prose around the final JSON, "GO" instead
+of "go") is tolerated where the intent is unambiguous and reported to the model otherwise.
 
 The model client must expose ``chat(messages, tools) -> {"content": str | None,
 "tool_calls": [{"id": str, "name": str, "arguments": dict}]}`` — see ``lcw.models.chat``.
@@ -23,11 +25,13 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 from . import models
+from .env import redact
 from .predeparture import evaluate
 from .prompts import INVESTIGATION, PRE_DEPARTURE
 from .tools import TOOL_SCHEMAS, Toolset
 
 MAX_RESULT_CHARS = 12000
+RULE_ID = re.compile(r"^R\d{2}$")
 STAGE_TOOLS = {
     "pre_departure": {"read_document", "segment_crate", "lookup_rule", "write_case_file"},
     "investigation": {"get_sensor_curve", "lookup_rule", "ask_handler", "draft_notification",
@@ -65,25 +69,76 @@ class AgentRun:
     result: dict
 
 
-def _json_from_text(text: str | None) -> dict | None:
+# ---------------------------------------------------------------------- parsing helpers
+
+def final_json(text: str | None, keys: tuple[str, ...]) -> dict | None:
+    """Extract the model's final JSON object, even when wrapped in prose or code fences.
+    Prefers the last object that carries one of ``keys``."""
     if not text:
         return None
-    match = re.search(r"\{.*\}", text, re.DOTALL)
-    if not match:
-        return None
+    stripped = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip())
     try:
-        value = json.loads(match.group(0))
+        value = json.loads(stripped)
+        if isinstance(value, dict):
+            return value
     except json.JSONDecodeError:
-        return None
-    return value if isinstance(value, dict) else None
+        pass
+    decoder = json.JSONDecoder()
+    found: list[dict] = []
+    for match in re.finditer(r"\{", text):
+        try:
+            value, _ = decoder.raw_decode(text, match.start())
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            found.append(value)
+    with_keys = [v for v in found if any(k in v for k in keys)]
+    return (with_keys or found or [None])[-1]
+
+
+def normalise_decision(final: dict | None) -> tuple[str | None, list[str], list[str]]:
+    """Return (decision, violated_rules, problems) from the stage-1 final JSON."""
+    problems: list[str] = []
+    final = final or {}
+    decision = final.get("decision")
+    decision = decision.strip().lower() if isinstance(decision, str) else None
+    if decision not in ("go", "block"):
+        problems.append(f"decision must be 'go' or 'block', got {final.get('decision')!r}")
+        decision = None
+    raw = final.get("violated_rules", [])
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, list):
+        problems.append("violated_rules must be a list")
+        raw = []
+    rules = sorted({r.strip().upper() for r in raw if isinstance(r, str) and RULE_ID.match(r.strip().upper())})
+    if len(rules) != len([r for r in raw if r]):
+        problems.append(f"ignored invalid entries in violated_rules: {raw!r}")
+    return decision, rules, problems
+
+
+def _arguments(call: dict) -> dict:
+    arguments = call.get("arguments")
+    if arguments is None:
+        return {}
+    if isinstance(arguments, str):
+        arguments = json.loads(arguments) if arguments.strip() else {}
+    if not isinstance(arguments, dict):
+        raise ValueError("tool arguments must be a JSON object")
+    return arguments
 
 
 def _clip(value) -> str:
+    """Serialise a tool result for the model; oversized results stay valid JSON."""
     text = json.dumps(value, ensure_ascii=False, default=str)
-    if len(text) > MAX_RESULT_CHARS:
-        text = text[:MAX_RESULT_CHARS] + '..."[truncated: ask for a shorter interval]"'
-    return text
+    if len(text) <= MAX_RESULT_CHARS:
+        return text
+    return json.dumps({"truncated": True,
+                       "note": "result too long: ask for a shorter interval or a single item",
+                       "preview": text[:MAX_RESULT_CHARS // 2]}, ensure_ascii=False)
 
+
+# ---------------------------------------------------------------------- the agent
 
 class Agent:
     def __init__(self, tools: Toolset, client: ModelClient | None = None, max_steps: int = 40):
@@ -91,15 +146,14 @@ class Agent:
         self.client = client or MetaModelClient()
         self.max_steps = max_steps
 
-    # ------------------------------------------------------------------ dispatch
-
-    def _call(self, name: str, arguments: dict):
-        arguments = dict(arguments or {})
+    def _call(self, name: str | None, arguments: dict):
+        if not name:
+            raise ValueError("tool call without a name")
+        arguments = dict(arguments)
         self.tools.reason = arguments.pop("reason", None)
         if name not in STAGE_TOOLS[self.tools.stage]:
             raise ValueError(f"tool {name!r} is not available at stage {self.tools.stage}")
-        method = getattr(self.tools, name)
-        return method(**arguments)
+        return getattr(self.tools, name)(**arguments)
 
     def _note_message(self, content: str | None) -> None:
         if content and content.strip():
@@ -107,63 +161,73 @@ class Agent:
                                        "model": getattr(self.client, "model_name", "unknown model"),
                                        "content": content.strip()})
 
-    def _loop(self, stage: str, system: str, user: str) -> StageOutcome:
+    def _loop(self, stage: str, system: str, user: str,
+              keys: tuple[str, ...] = ("decision", "summary")) -> StageOutcome:
         self.tools.stage = stage
         tools = [t for t in TOOL_SCHEMAS if t["name"] in STAGE_TOOLS[stage]]
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
         for step in range(1, self.max_steps + 1):
-            reply = self.client.chat(messages, tools)
+            try:
+                reply = self.client.chat(messages, tools) or {}
+            except Exception as error:
+                return StageOutcome(None, step, f"model call failed: {type(error).__name__}: "
+                                                f"{redact(error)}", messages)
             content, calls = reply.get("content"), reply.get("tool_calls") or []
             messages.append({"role": "assistant", "content": content, "tool_calls": calls})
             if not calls:
                 self._note_message(content)
-                final = _json_from_text(content)
+                final = final_json(content, keys)
                 if final is None:
                     return StageOutcome(None, step, "final answer is not JSON", messages)
                 return StageOutcome(final, step, None, messages)
             for call in calls:
+                name = call.get("name") if isinstance(call, dict) else None
                 try:
-                    result = self._call(call["name"], call.get("arguments") or {})
+                    result = self._call(name, _arguments(call))
                 except Exception as error:  # the model sees the error and can recover
-                    result = {"error": f"{type(error).__name__}: {error}"}
-                    self.tools.journal.append({"type": "error", "stage": stage, "tool": call["name"],
-                                               "arguments": call.get("arguments"), "error": result["error"]})
+                    message = redact(f"{type(error).__name__}: {error}")
+                    result = {"error": message}
+                    self.tools.journal.append({"type": "error", "stage": stage, "tool": name,
+                                               "error": message})
                     self.tools.reason = None
-                messages.append({"role": "tool", "tool_call_id": call.get("id"), "name": call["name"],
-                                 "content": _clip(result)})
+                messages.append({"role": "tool", "tool_call_id": call.get("id") if isinstance(call, dict) else None,
+                                 "name": name, "content": _clip(result)})
         return StageOutcome(None, self.max_steps, f"no final answer after {self.max_steps} steps", messages)
-
-    # ------------------------------------------------------------------ stages
 
     def run(self) -> AgentRun:
         entry = self.tools.entry_record()
         pre = self._loop("pre_departure", PRE_DEPARTURE,
-                         "Entry record:\n" + json.dumps(entry, ensure_ascii=False, indent=1))
+                         "Entry record:\n" + json.dumps(entry, ensure_ascii=False, indent=1),
+                         keys=("decision",))
         deterministic = evaluate(self.tools.rules, self.tools.observations)
-        decision = (pre.final or {}).get("decision")
-        violated = sorted((pre.final or {}).get("violated_rules") or [])
+        decision, violated, problems = normalise_decision(pre.final)
+        if pre.final is not None and problems:
+            pre.error = "; ".join(problems) if decision is None else pre.error
 
         investigation = None
         if decision == "go" and entry["sensor_curve_available"]:
             self.tools.stage = "investigation"
             notes = self.tools.convoy_notes()
-            accepted_pre = [c["id"] for c in self.tools.accepted]
             context = {"entry_record": entry,
-                       "pre_departure": {"decision": decision, "accepted_claims": accepted_pre},
+                       "pre_departure": {"decision": decision,
+                                         "accepted_claims": [c["id"] for c in self.tools.accepted]},
                        "convoy_notes": notes}
             investigation = self._loop("investigation", INVESTIGATION,
-                                       json.dumps(context, ensure_ascii=False, indent=1))
+                                       json.dumps(context, ensure_ascii=False, indent=1), keys=("summary",))
 
         deviations = [{"rule": c["rule"], "start": c["interval"]["start"], "end": c["interval"]["end"],
                        "status": c["status"]}
                       for c in self.tools.accepted if c.get("kind") == "deviation"]
-        handler_called = any(e.get("tool") == "ask_handler" for e in self.tools.journal)
+        handler_called = any(e.get("type") == "tool" and e.get("tool") == "ask_handler"
+                             for e in self.tools.journal)
+        errors = [e for e in (pre.error, investigation.error if investigation else None) if e]
         result = {
             "dossier_id": self.tools.dossier.id,
             "phase1": {"decision": decision, "violated_rules": violated},
             "investigation": None if investigation is None else
             {"handler_called": handler_called, "deviations": deviations},
-            "errors": [e for e in (pre.error, investigation.error if investigation else None) if e],
+            "errors": errors,
+            "warnings": problems,
             "decision_matches_readings": decision == deterministic["decision"],
         }
         return AgentRun(self.tools.dossier.id, pre, investigation, deterministic, result)

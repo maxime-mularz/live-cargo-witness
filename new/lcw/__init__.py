@@ -18,4 +18,4 @@ STATUSES = (
     "indeterminate",
 )
 
-__all__ = ["PACKAGE_DIR", "NEW_DIR", "RULES_DIR", "BENCH_DIR", "STATUSES"]
+__all__ = ["BENCH_DIR", "NEW_DIR", "PACKAGE_DIR", "RULES_DIR", "STATUSES"]

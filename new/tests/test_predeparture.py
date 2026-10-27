@@ -1,8 +1,7 @@
-from lcw.dossier import Dossier, load_json
-from lcw.tools import Toolset
-
 from conftest import dossier_dirs
 from helpers import read_everything
+from lcw.dossier import Dossier, load_json
+from lcw.tools import Toolset
 
 
 def test_pre_departure_decisions_match_expected(rules):

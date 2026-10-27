@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import csv
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 ISO_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
@@ -28,12 +28,12 @@ def parse_ts(value: str) -> datetime:
     A timestamp without offset is taken as UTC."""
     moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=timezone.utc)
-    return moment.astimezone(timezone.utc)
+        moment = moment.replace(tzinfo=UTC)
+    return moment.astimezone(UTC)
 
 
 def format_ts(value: datetime) -> str:
-    return value.astimezone(timezone.utc).strftime(ISO_FORMAT)
+    return value.astimezone(UTC).strftime(ISO_FORMAT)
 
 
 def load_json(path: Path) -> dict | list:

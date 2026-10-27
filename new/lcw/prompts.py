@@ -29,7 +29,8 @@ STAGE 1 — PRE-DEPARTURE CHECK (connected, before loading).
    means the consignment is not accepted.
 4. For each violated rule, submit one claim: kind "pre_departure", status "violated", the rule,
    one factual sentence, and evidence citing the document fields or crate features you rely on
-   (for head counts, cite the three documents' head_count fields).
+   (for head counts, cite the three documents' head_count fields; for R06, cite each crate's
+   awb_number feature and the air waybill's awb_number field).
 5. Answer with JSON only, no other text:
    {"decision": "go" | "block", "violated_rules": ["R0x", ...], "summary": "<one sentence>"}
 """

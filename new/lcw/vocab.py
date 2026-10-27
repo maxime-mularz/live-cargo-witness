@@ -64,3 +64,11 @@ def find_forbidden(text: str) -> list[str]:
         if pattern.search(text or "") and label not in found:
             found.append(label)
     return found
+
+
+def mask_forbidden(text: str) -> str:
+    """Replace forbidden words by ``[withheld]`` — for free model text (stated reasons, final
+    messages) that the verifier does not check but the journal page displays."""
+    for _, pattern in _PATTERNS:
+        text = pattern.sub("[withheld]", text or "")
+    return text

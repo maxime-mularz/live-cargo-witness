@@ -1,10 +1,9 @@
 import copy
 
-from lcw.dossier import write_json
-from lcw.score import score_bench
-
 from conftest import DEV, dossier_dirs
 from helpers import scripted_run
+from lcw.dossier import write_json
+from lcw.score import score_bench
 
 
 def write_results(tmp_path, transform=None):

@@ -2,11 +2,10 @@ import copy
 
 import pytest
 
-from lcw.dossier import Dossier, load_json
-from lcw.verifier import Verifier
-
 from conftest import dossier_dirs
 from helpers import scripted_run
+from lcw.dossier import Dossier, load_json
+from lcw.verifier import Verifier
 
 
 def by_category(category, index=0):
