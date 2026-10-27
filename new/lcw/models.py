@@ -53,11 +53,13 @@ from .schema import AWB_RE, DOCUMENT_FIELDS, coerce_document
 
 TIMEOUT_S = 180
 RETRIES = 4                      # on 429 / 5xx / network errors, with exponential backoff
-SAM_CONCEPTS = {                 # SAM 3.1 concept prompts (short noun phrases, one per request)
-    "live_animals_label": "live animals label",
-    "orientation_arrows": "arrow",
-    "awb_number": "number plate",
+# SAM 3.1 concept prompts (short noun phrases, one per request), tried in order until a box checks out.
+SAM_CONCEPTS = {
+    "live_animals_label": ["orange label", "live animals label", "sign"],
+    "orientation_arrows": ["arrow"],
+    "awb_number": ["number plate", "white plate", "white sign"],
 }
+MAX_BOXES = 3                    # boxes read per concept, best confidence first
 USAGE: list[dict] = []           # one entry per model call: model, tokens, seconds (read by the agent)
 
 
@@ -406,45 +408,84 @@ def _crop(image: Path, box: list[int], margin: int = 12) -> bytes:
         return buffer.getvalue()
 
 
+def _crate_feature(image: Path, feature: str) -> dict:
+    """Find and read one crate feature.
+
+    1. SAM 3.1 looks for it with each concept prompt in turn; each box it returns (best first)
+       is cropped and read by Muse Spark Open. The first box that checks out is kept.
+    2. If no box checks out, Muse Spark Open looks at the whole photo. Only if it also finds
+       nothing is the feature declared absent: absence needs two models to agree, so a concept
+       prompt SAM does not match never becomes a deviation in the record.
+    3. If the whole-photo answer is null, the feature is ``"readable": False`` (rule unreadable).
+    ``found_by`` says which model located the feature, for the journal."""
+    crop_question, crop_key = CROP_QUESTIONS[feature]
+    for concept in SAM_CONCEPTS[feature]:
+        boxes = sorted(sam_boxes(image, concept), key=lambda b: -b.get("confidence", 0))[:MAX_BOXES]
+        for box in boxes:
+            value = _vision_json(open_endpoint(), _crop(image, box["bbox"]), crop_question, (crop_key,)).get(crop_key)
+            reading = _feature_reading(feature, value)
+            if reading is not None and reading is not ABSENT:
+                return {**reading, "bbox": box["bbox"], "found_by": f"SAM 3.1 ({concept}) + Muse Spark Open"}
+    question, key = PHOTO_QUESTIONS[feature]
+    value = _vision_json(open_endpoint(), image, question, (key,)).get(key)
+    reading = _feature_reading(feature, value)
+    if reading is ABSENT:
+        return {**EMPTY_FEATURE[feature], "found_by": "nothing found by SAM 3.1 nor Muse Spark Open"}
+    if reading is None:
+        return {**EMPTY_FEATURE[feature], "present": None, "readable": False,
+                "found_by": "Muse Spark Open could not tell (whole photo)"}
+    return {**reading, "bbox": None, "found_by": "Muse Spark Open (whole photo; SAM 3.1 found no box)"}
+
+
+ABSENT = object()
+EMPTY_FEATURE = {"live_animals_label": {"present": False, "bbox": None},
+                 "orientation_arrows": {"present": False, "direction": None, "bbox": None},
+                 "awb_number": {"value": None, "bbox": None}}
+CROP_QUESTIONS = {
+    "live_animals_label": ('Does this crop show a label reading "LIVE ANIMALS"? '
+                           'Return {"live_animals": true|false|null}.', "live_animals"),
+    "orientation_arrows": ('These may be orientation arrows on a crate. Return {"direction": "up"|"down"|"none"|null}.',
+                           "direction"),
+    "awb_number": ('Read the air waybill number on this plate. Return {"awb_number": "ddd-dddddddd"|"none"|null}.',
+                   "awb_number"),
+}
+PHOTO_QUESTIONS = {
+    "live_animals_label": ('Is there a label reading "LIVE ANIMALS" on this crate? '
+                           'Return {"live_animals_label": true|false|null} (null if you cannot tell).',
+                           "live_animals_label"),
+    "orientation_arrows": ('Are there orientation arrows on this crate, and which way do they point? '
+                           'Return {"orientation_arrows": "up"|"down"|"none"|null} (null if you cannot tell).',
+                           "orientation_arrows"),
+    "awb_number": ('Is an air waybill number written on this crate? Return {"awb_number": "ddd-dddddddd"} '
+                   'if you can read it, {"awb_number": "none"} if there is none, {"awb_number": null} if you '
+                   "cannot tell.", "awb_number"),
+}
+
+
+def _feature_reading(feature: str, value):
+    """A model's answer about one feature: a feature dict (without bbox), ABSENT, or None (unknown)."""
+    if feature == "live_animals_label":
+        if value is True:
+            return {"present": True}
+        return ABSENT if value is False else None
+    if feature == "orientation_arrows":
+        if value in ("up", "down"):
+            return {"present": True, "direction": value}
+        return ABSENT if value == "none" else None
+    if isinstance(value, str) and value.strip().lower() == "none":
+        return ABSENT
+    match = AWB_RE.search(str(value or ""))
+    return {"value": match.group()} if match else None
+
+
 def segment_crate_image(image: Path) -> dict:
-    """SAM 3.1 finds the label, the arrows and the number plate; Muse Spark Open reads the
-    arrow direction and the plate text on SAM's crops. Returns
+    """SAM 3.1 finds the label, the arrows and the number plate; Muse Spark Open reads SAM's
+    crops, and checks the whole photo before anything is declared absent. Returns
     ``{"live_animals_label": {"present", "bbox"}, "orientation_arrows": {"present", "direction":
-    "up"|"down"|None, "bbox"}, "awb_number": {"value", "bbox"}}``."""
+    "up"|"down"|None, "bbox"}, "awb_number": {"value", "bbox"}}``, each with ``found_by`` and,
+    when it could not be read, ``"readable": False``."""
     image = Path(image)
-    found = {feature: sam_boxes(image, concept) for feature, concept in SAM_CONCEPTS.items()}
-
-    def best(boxes):
-        return max(boxes, key=lambda b: b.get("confidence", 0))["bbox"] if boxes else None
-
-    label_box, arrow_box, plate_box = (best(found[f]) for f in SAM_CONCEPTS)
-    # Not found by SAM -> absent. Found but not read by the vision model -> "readable": False,
-    # which makes the rule unreadable, never violated: a reading failure is not a deviation.
-    label = {"present": False, "bbox": None}
-    if label_box:
-        answer = _vision_json(open_endpoint(), _crop(image, label_box),
-                              'Does this crop show a label reading "LIVE ANIMALS"? '
-                              'Return {"live_animals": true|false|null}.', ("live_animals",))
-        seen = answer.get("live_animals")
-        label = ({"present": seen, "bbox": label_box if seen else None} if isinstance(seen, bool)
-                 else {"present": None, "bbox": label_box, "readable": False})
-    arrows = {"present": False, "direction": None, "bbox": None}
-    if arrow_box:
-        answer = _vision_json(open_endpoint(), _crop(image, arrow_box),
-                              'These are orientation arrows on a crate. Return {"direction": "up"|"down"|null}.',
-                              ("direction",))
-        direction = answer.get("direction")
-        arrows = ({"present": True, "direction": direction, "bbox": arrow_box} if direction in ("up", "down")
-                  else {"present": True, "direction": None, "bbox": arrow_box, "readable": False})
-    plate = {"value": None, "bbox": None}
-    if plate_box:
-        answer = _vision_json(open_endpoint(), _crop(image, plate_box),
-                              'Read the air waybill number on this plate. Return {"awb_number": "ddd-dddddddd"|null}.',
-                              ("awb_number",))
-        match = AWB_RE.search(str(answer.get("awb_number") or ""))
-        plate = ({"value": match.group(), "bbox": plate_box} if match
-                 else {"value": None, "bbox": plate_box, "readable": False})
-    return {"live_animals_label": label, "orientation_arrows": arrows, "awb_number": plate}
+    return {feature: _crate_feature(image, feature) for feature in SAM_CONCEPTS}
 
 
 # ---------------------------------------------------------------------- Voice Transcribe

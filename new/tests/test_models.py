@@ -169,38 +169,72 @@ def sam_stream(box: str) -> str:
 LABEL, ARROWS, PLATE = "x1=150;y1=170;x2=460;y2=280", "x1=560;y1=180;x2=730;y2=330", "x1=145;y1=390;x2=590;y2=475"
 
 
+EMPTY = 'data: {"type": "response.completed", "response": {}}\n'
+
+
+def sam_concepts(fake):
+    return [json.loads(r.data)["input"][0]["content"][0]["text"] for r in fake.requests
+            if r.full_url.endswith("/responses")]
+
+
 def test_segment_crate_uses_sam_then_reads_crops(keys, monkeypatch):
     from PIL import Image
     folder = dossier_dirs()[0]
     image = folder / "photos" / "crate_01.png"
-    fake = Transport(sam_stream(LABEL), sam_stream(ARROWS), sam_stream(PLATE),
-                     completion(content='{"live_animals": true}'),
-                     completion(content='{"direction": "down"}'),
-                     completion(content='{"awb_number": "AWB 000-12345675"}'))
+    fake = Transport(sam_stream(LABEL), completion(content='{"live_animals": true}'),
+                     sam_stream(ARROWS), completion(content='{"direction": "down"}'),
+                     sam_stream(PLATE), completion(content='{"awb_number": "AWB 000-12345675"}'))
     monkeypatch.setattr(models, "_send", fake)
     features = models.segment_crate_image(image)
-    sam = [json.loads(r.data) for r in fake.requests[:3]]
-    assert all(r.full_url == "https://api.meta.ai/v1/responses" for r in fake.requests[:3])
-    assert [s["input"][0]["content"][0]["text"] for s in sam] == list(models.SAM_CONCEPTS.values())
-    assert sam[0]["model"] == "sam-3.1" and sam[0]["stream"] is True
+    sam = [json.loads(r.data) for r in fake.requests if r.full_url == "https://api.meta.ai/v1/responses"]
+    assert len(sam) == 3 and sam[0]["model"] == "sam-3.1" and sam[0]["stream"] is True
+    assert sam_concepts(fake) == [c[0] for c in models.SAM_CONCEPTS.values()]
     assert sam[0]["input"][0]["content"][1]["type"] == "input_image"
-    assert features == {"live_animals_label": {"present": True, "bbox": [150, 170, 460, 280]},
-                        "orientation_arrows": {"present": True, "direction": "down", "bbox": [560, 180, 730, 330]},
-                        "awb_number": {"value": "000-12345675", "bbox": [145, 390, 590, 475]}}
+    assert {k: {f: v for f, v in feature.items() if f != "found_by"} for k, feature in features.items()} == {
+        "live_animals_label": {"present": True, "bbox": [150, 170, 460, 280]},
+        "orientation_arrows": {"present": True, "direction": "down", "bbox": [560, 180, 730, 330]},
+        "awb_number": {"value": "000-12345675", "bbox": [145, 390, 590, 475]}}
+    assert features["awb_number"]["found_by"].startswith("SAM 3.1 (number plate)")
     # the vision model receives SAM's crop of the plate (with a 12 px margin), not the whole photo
     url = json.loads(fake.requests[5].data)["messages"][1]["content"][1]["image_url"]["url"]
     crop = Image.open(io.BytesIO(__import__("base64").b64decode(url.split(",", 1)[1])))
     assert crop.size == (590 - 145 + 24, 475 - 390 + 24)
 
 
+def test_rejected_box_moves_on_to_the_next_concept(keys, monkeypatch):
+    folder = dossier_dirs()[0]
+    fake = Transport(sam_stream(PLATE), completion(content='{"live_animals": false}'),  # "orange label" hit the plate
+                     sam_stream(LABEL), completion(content='{"live_animals": true}'))   # "live animals label"
+    monkeypatch.setattr(models, "_send", fake)
+    label = models._crate_feature(folder / "photos" / "crate_01.png", "live_animals_label")
+    assert label["present"] is True and label["bbox"] == [150, 170, 460, 280]
+    assert sam_concepts(fake) == models.SAM_CONCEPTS["live_animals_label"][:2]
+
+
+def test_sam_miss_is_checked_on_the_whole_photo(keys, monkeypatch):
+    """The first live run: SAM found no label box, the label was there. Never a violation."""
+    folder = dossier_dirs()[0]
+    concepts = models.SAM_CONCEPTS["live_animals_label"]
+    fake = Transport(*[EMPTY] * len(concepts), completion(content='{"live_animals_label": true}'))
+    monkeypatch.setattr(models, "_send", fake)
+    label = models._crate_feature(folder / "photos" / "crate_01.png", "live_animals_label")
+    assert label["present"] is True and label["bbox"] is None and "whole photo" in label["found_by"]
+    last = json.loads(fake.requests[-1].data)["messages"][1]["content"][1]["image_url"]["url"]
+    assert len(last) > 10000  # the whole photo, not a crop
+
+
 def test_unread_crops_are_unreadable_not_violations(keys, monkeypatch):
     from lcw.predeparture import evaluate_rule
     from lcw.rules import load_rules
     folder = dossier_dirs()[0]
-    fake = Transport(sam_stream(LABEL), sam_stream(ARROWS), sam_stream(PLATE),
-                     completion(content='{"live_animals": null}'), completion(content='{"direction": null}'),
-                     completion(content='{"awb_number": null}'))
-    monkeypatch.setattr(models, "_send", fake)
+    replies = []
+    for feature, (answer_key, box) in {"live_animals_label": ("live_animals", LABEL),
+                                       "orientation_arrows": ("direction", ARROWS),
+                                       "awb_number": ("awb_number", PLATE)}.items():
+        for _ in models.SAM_CONCEPTS[feature]:
+            replies += [sam_stream(box), completion(content=json.dumps({answer_key: None}))]
+        replies.append(completion(content=json.dumps({models.PHOTO_QUESTIONS[feature][1]: None})))
+    monkeypatch.setattr(models, "_send", Transport(*replies))
     features = models.segment_crate_image(folder / "photos" / "crate_01.png")
     assert all(feature["readable"] is False for feature in features.values())
     rules = load_rules()
@@ -222,16 +256,22 @@ def test_sam_stream_that_does_not_complete_is_an_error(keys, monkeypatch, body):
         models.sam_boxes(b"png", "arrow")
 
 
-def test_sam_finding_nothing_means_absent(keys, monkeypatch):
+def test_absent_only_when_both_models_agree(keys, monkeypatch):
     folder = dossier_dirs()[0]
-    empty = 'data: {"type": "response.completed", "response": {}}\n'
-    fake = Transport(empty, empty, empty)
+    replies = []
+    for feature in models.SAM_CONCEPTS:
+        replies += [EMPTY] * len(models.SAM_CONCEPTS[feature])
+        none = {"live_animals_label": False, "orientation_arrows": "none", "awb_number": "none"}[feature]
+        replies.append(completion(content=json.dumps({models.PHOTO_QUESTIONS[feature][1]: none})))
+    fake = Transport(*replies)
     monkeypatch.setattr(models, "_send", fake)
     features = models.segment_crate_image(folder / "photos" / "crate_01.png")
-    assert features == {"live_animals_label": {"present": False, "bbox": None},
-                        "orientation_arrows": {"present": False, "direction": None, "bbox": None},
-                        "awb_number": {"value": None, "bbox": None}}
-    assert len(fake.requests) == 3
+    assert {k: {f: v for f, v in feature.items() if f != "found_by"} for k, feature in features.items()} == {
+        "live_animals_label": {"present": False, "bbox": None},
+        "orientation_arrows": {"present": False, "direction": None, "bbox": None},
+        "awb_number": {"value": None, "bbox": None}}
+    assert all("nothing found" in feature["found_by"] for feature in features.values())
+    assert not fake.replies
 
 
 def test_transcribe_sends_multipart_wav(keys, monkeypatch, tmp_path):

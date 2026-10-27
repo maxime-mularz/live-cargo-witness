@@ -92,8 +92,12 @@ def _summary(entry: dict) -> str:
         label = features.get("live_animals_label", {}).get("present")
         arrows = features.get("orientation_arrows", {})
         plate = features.get("awb_number", {}).get("value")
-        return (f"{_e(entry['arguments'].get('photo'))}: label {'present' if label else 'MISSING'}, "
+        text = (f"{_e(entry['arguments'].get('photo'))}: label {'present' if label else 'MISSING'}, "
                 f"arrows {_e(arrows.get('direction') or 'MISSING')}, plate {_e(plate)}")
+        found = sorted({f.get("found_by") for f in features.values() if isinstance(f, dict) and f.get("found_by")})
+        if found:
+            text += f'<div class="small">{_e("; ".join(found))}</div>'
+        return text
     if tool == "get_sensor_curve":
         if not result or not result.get("available"):
             return "no sensor curve"

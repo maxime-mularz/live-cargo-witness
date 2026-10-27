@@ -76,7 +76,8 @@ Images and data must be fictitious and say so: every image carries a visible "SY
 
 `direction` is `"up"`, `"down"` or `null` (no arrows). A feature that was found but could not be
 read carries `"readable": false` (it makes its rule unreadable, never violated); truth files of
-generated dossiers never need it.
+generated dossiers never need it. Live readings also carry `found_by` (which model located the
+feature), shown in the investigation journal.
 
 ## Sensor log — sensor/curve.csv
 
