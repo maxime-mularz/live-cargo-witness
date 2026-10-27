@@ -147,6 +147,27 @@ def test_read_document_types_and_regions(keys, monkeypatch):
     assert part["type"] == "image_url" and part["image_url"]["url"].startswith("data:image/png;base64,")
 
 
+def test_an_empty_document_reading_is_asked_once_more(keys, monkeypatch):
+    # Seen live (DEV-11, night run 2026-10-27): a legible loading list read as all-null 1 time in 8.
+    image = dossier_dirs()[0] / "documents" / "loading_list.png"
+    empty = {"fields": {"awb_number": None, "head_count": None, "crates": None}, "boxes": {}}
+    full = {"fields": {"awb_number": "000-1", "head_count": 9, "crates": None}, "boxes": {}}
+    fake = Transport(completion(content=json.dumps(empty)), completion(content=json.dumps(full)))
+    monkeypatch.setattr(models, "_send", fake)
+    read = models.read_document_image(image, "loading_list")
+    assert read["head_count"] == 9 and len(fake.requests) == 2
+
+
+def test_a_document_empty_twice_stays_unread(keys, monkeypatch):
+    image = dossier_dirs()[0] / "documents" / "loading_list.png"
+    empty = {"fields": {"awb_number": None, "head_count": None, "crates": None}, "boxes": {}}
+    fake = Transport(*(completion(content=json.dumps(empty)) for _ in range(2)))
+    monkeypatch.setattr(models, "_send", fake)
+    read = models.read_document_image(image, "loading_list")
+    assert read["head_count"] is None and read["awb_number"] is None  # never guessed
+    assert len(fake.requests) == 2  # one more try, not a loop
+
+
 def test_truth_files_match_the_field_schema():
     for folder in dossier_dirs():
         for document, fields in DOCUMENT_FIELDS.items():

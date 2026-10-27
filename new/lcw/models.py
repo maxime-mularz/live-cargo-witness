@@ -293,6 +293,11 @@ def _vision_json(endpoint: Endpoint, image: Path | bytes, instruction: str, keys
     return found
 
 
+# Muse Spark Open sometimes answers every field null on a legible page (1 in 8 on DEV-11's loading list).
+# A wholly empty reading is asked once more; if it is empty again, the fields stay unread (never guessed).
+EMPTY_READING_RETRIES = 1
+
+
 def read_document_image(image: Path, document: str) -> dict:
     """Muse Spark Open (vision). Return ``{field_name: value}`` for the fields of ``document``
     (``awb``, ``certification`` or ``loading_list``, see ``lcw.schema``), plus
@@ -303,8 +308,11 @@ def read_document_image(image: Path, document: str) -> dict:
                    f'{{"fields": {{...}}, "boxes": {{...}}}}. "fields" has exactly these keys:\n{listing}\n'
                    'Copy values as printed. "boxes" gives, for each field you read, its box '
                    "[x0, y0, x1, y1] on a 0-1000 grid (0,0 top-left, 1000,1000 bottom-right).")
-    answer = _vision_json(open_endpoint(), Path(image), instruction, ("fields",))
-    read = coerce_document(document, answer.get("fields") if isinstance(answer.get("fields"), dict) else answer)
+    for _ in range(1 + EMPTY_READING_RETRIES):
+        answer = _vision_json(open_endpoint(), Path(image), instruction, ("fields",))
+        read = coerce_document(document, answer.get("fields") if isinstance(answer.get("fields"), dict) else answer)
+        if any(value is not None for value in read.values()):
+            break
     read["_regions"] = _to_pixels(answer.get("boxes"), Path(image))
     return read
 
