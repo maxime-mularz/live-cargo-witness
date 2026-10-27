@@ -23,7 +23,7 @@ The full spec (in French) lives outside the repo; this file is the part a coding
    specialist", "certified" or "approved", never the IATA logo, never text copied from the LAR.
 8. **Synthetic data is labelled.** Synthetic curves carry `synthetic: true` in their metadata and a
    `SYNTHETIC` banner wherever they are displayed.
-9. **The reserved bench is sealed.** `new/bench/reserved/` is written by hand by the apprentice and
+9. **The reserved bench is sealed.** `new/bench/reserved/` is written by hand by a team member who never saw the generator, and
    sealed by a hash committed before the code freeze (Nov 3, 6 PM Paris). Never open, read, generate
    or tune against it before the freeze. Never edit `expected.json` files to make a score go up.
 
@@ -51,7 +51,7 @@ Built offline (no network needed, fully tested):
 - `lcw/casefile.py`, `lcw/hashing.py` — shared handover record (PV) + SHA-256 manifest (EF-15/16).
 - `lcw/score.py` — bench scoring against `expected.json`.
 
-Left for the machine that holds the API keys (Maxime's Linux, with Claude Code or Muse Code):
+Left for the machine that holds the API keys (with Claude Code or Muse Code):
 - `lcw/models.py` — adapters for Muse Spark Open (Baseten), SAM 3.1, Muse Voice Transcribe,
   Muse Spark (Meta Model API). The function signatures are fixed; the bodies raise
   `NotImplementedError` until wired. Check each provider's docs for the request format — do not guess.

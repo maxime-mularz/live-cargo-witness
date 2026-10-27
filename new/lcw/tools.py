@@ -71,7 +71,12 @@ class Toolset:
         self.backend = backend
         self.rules = rules or load_rules()
         self.journal: list[dict] = []
-        self.observations: dict = {"documents": {}, "crates": {}, "handler_answers": []}
+        self.observations: dict = {
+            "documents": {}, "crates": {}, "handler_answers": [],
+            # every crate photo of the dossier must be segmented before a decision
+            "expected_crates": [p.split("/")[-1].removesuffix(".png")
+                                for p in dossier.record.get("photos", [])],
+        }
         self.drafts: list[dict] = []
         self.accepted: list[dict] = []
 
@@ -145,7 +150,10 @@ class Toolset:
             text = models.transcribe(self.dossier.path(chosen["audio"]))
         else:
             text = chosen["answer"]
-        result = {"id": chosen["id"], "start": start, "end": end, "question": question, "answer": text}
+        result = {"id": chosen["id"], "question": question, "asked_start": start, "asked_end": end,
+                  # the interval the recorded answer is about (None for the default answer)
+                  "start": chosen.get("start"), "end": chosen.get("end"),
+                  "default": bool(chosen.get("default")), "answer": text}
         self.observations["handler_answers"].append(result)
         self._log("ask_handler", {"question": question, "start": start, "end": end}, result)
         return result

@@ -44,8 +44,11 @@ def evaluate_rule(rule: Rule, observations: dict) -> dict:
             outcome = "violated"
     elif kind in ("crate_feature_present", "crate_arrows_up", "crate_awb_matches"):
         crates = observations.get("crates", {})
-        if not crates:
-            return {"rule": rule.id, "outcome": "unreadable", "details": {"crates": 0}}
+        expected_crates = set(observations.get("expected_crates") or crates)
+        missing = sorted(expected_crates - set(crates))
+        if not crates or missing:
+            return {"rule": rule.id, "outcome": "unreadable",
+                    "details": {"crates": len(crates), "not_segmented": missing}}
         failing = []
         expected_awb = _field(observations, check.get("document", "awb"), check.get("field", "awb_number"))
         for crate_id, features in sorted(crates.items()):

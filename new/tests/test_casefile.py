@@ -48,3 +48,11 @@ def test_rejected_claim_never_enters_the_record(tmp_path):
         write_case(tmp_path / "case", tools.dossier, tools.rules, claims, tools.observations, pre,
                    tools.journal)
     assert not (tmp_path / "case").exists()
+
+
+def test_record_decision_cannot_be_forced(tmp_path):
+    folder = next(f for f in dossier_dirs() if load_json(f / "expected.json")["category"] == "defect_R03")
+    tools, pre, claims, result = scripted_run(folder)
+    with pytest.raises(ValueError):
+        write_case(tmp_path / "case", tools.dossier, tools.rules, [], tools.observations,
+                   {"decision": "go"}, tools.journal)

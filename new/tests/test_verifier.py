@@ -100,8 +100,99 @@ def test_segment_that_does_not_break_the_rule_is_rejected(handler_case):
     for item in claim["evidence"]:
         if item["type"] == "curve_segment":
             item["start"] = item["end"] = start
+    claim["interval"] = {"start": start, "end": start}
     claim["statement"] = "Temperature stayed normal."
     assert any("does not break" in r for r in reasons(tools, claim))
+
+
+# --- counter-examples from the independent review -------------------------------------------
+
+def test_numbers_glued_to_units_and_spelled_out_are_rejected(handler_case):
+    tools, claims = handler_case
+    found = reasons(tools, mutate(claims[0], statement=claims[0]["statement"] + " It reached 31C for 45min."))
+    assert any("number 31" in r for r in found) and any("number 45" in r for r in found)
+    found = reasons(tools, mutate(claims[0], statement=claims[0]["statement"] + " Thirty-seven crates."))
+    assert any("spelled-out" in r for r in found)
+
+
+def test_unknown_identifiers_are_rejected(handler_case):
+    tools, claims = handler_case
+    found = reasons(tools, mutate(claims[0], statement=claims[0]["statement"] + " See R99 and H42."))
+    assert any("R99" in r for r in found) and any("H42" in r for r in found)
+
+
+def test_whole_dossier_cannot_be_cited(handler_case):
+    tools, claims = handler_case
+    for path in ("", "declared", "schedule"):
+        claim = mutate(claims[0], evidence=claims[0]["evidence"] + [{"type": "dossier_field", "path": path}])
+        assert any("dossier field" in r for r in reasons(tools, claim)), path
+
+
+def test_default_answer_never_explains():
+    tools, pre, claims, result = scripted_run(by_category("explained_by_note"))
+    claim = claims[0]
+    default = tools.ask_handler("Anything?", "2000-01-01T00:00:00Z", "2000-01-01T00:10:00Z")
+    assert default["default"]
+    claim = mutate(claim, evidence=[e for e in claim["evidence"] if e["type"] != "voice_note"]
+                   + [{"type": "handler_answer", "id": default["id"]}])
+    assert any("explanation needs" in r for r in reasons(tools, claim))
+
+
+def test_far_away_note_does_not_explain():
+    tools, pre, claims, result = scripted_run(by_category("indeterminate"))
+    claim = claims[0]
+    last_note = tools.dossier.convoy_notes()[-1]
+    claim = mutate(claim, status="explained_rule_exceeded",
+                   evidence=claim["evidence"] + [{"type": "voice_note", "id": last_note["id"]}])
+    claim["evidence"] = [e for e in claim["evidence"] if e["type"] != "handler_answer"]
+    assert any("explanation needs" in r for r in reasons(tools, claim))
+
+
+def test_interval_must_match_the_breach(handler_case):
+    tools, claims = handler_case
+    claim = copy.deepcopy(claims[0])
+    record = tools.dossier.record
+    whole = {"start": record["schedule"]["loading_start"], "end": record["schedule"]["unloading_end"]}
+    for item in claim["evidence"]:
+        if item["type"] == "curve_segment":
+            item.update(whole)
+    claim["interval"] = {"start": record["schedule"]["loading_start"],
+                         "end": record["schedule"]["loading_start"]}
+    claim["statement"] = "A deviation was found."
+    assert any("does not break" in r for r in reasons(tools, claim))
+
+
+def test_unsegmented_crate_cannot_pass(rules):
+    from lcw.predeparture import evaluate
+    from lcw.tools import Toolset
+    folder = by_category("defect_R04")
+    tools = Toolset(Dossier(folder), rules=rules)
+    for name in tools.dossier.record["documents"]:
+        tools.read_document(name)
+    good = [c for c in tools.observations["expected_crates"]
+            if load_json(folder / "photos" / f"{c}.truth.json")["features"]["live_animals_label"]["present"]]
+    tools.segment_crate(good[0])
+    assert evaluate(rules, tools.observations)["decision"] == "block"
+    claim = {"id": "C1", "kind": "pre_departure", "rule": "R04", "status": "satisfied",
+             "statement": "Every crate carries the label.",
+             "evidence": [{"type": "crate_feature", "photo": good[0], "feature": "live_animals_label"}]}
+    assert verifier_for(tools).check_claim(claim)
+
+
+def test_timestamps_with_offsets_are_accepted(handler_case):
+    tools, claims = handler_case
+    start = claims[0]["interval"]["start"].replace("Z", "+00:00")
+    end = claims[0]["interval"]["end"].replace("Z", "+00:00")
+    answer = tools.ask_handler("What happened?", start, end)
+    assert not answer["default"]
+
+
+def test_bad_series_is_rejected_not_crashing(handler_case):
+    tools, claims = handler_case
+    claim = copy.deepcopy(claims[0])
+    claim["evidence"].append({"type": "curve_segment", "series": "timestamp",
+                              "start": claim["interval"]["start"], "end": claim["interval"]["end"]})
+    assert any("unknown series" in r for r in reasons(tools, claim))
 
 
 def test_unknown_rule_and_evidence(handler_case):

@@ -52,14 +52,21 @@ from .predeparture import evaluate_rule
 from .rules import Rule, get_path, resolve_threshold
 from .vocab import find_forbidden
 
-NOTE_WINDOW = timedelta(hours=3)
+NOTE_WINDOW = timedelta(minutes=10)  # a note explains an interval if dictated during it (± 10 min)
+SERIES = ("temperature_c", "light_lux", "shock_g")
+DOSSIER_PREFIXES = ("declared.", "sensor.", "schedule.", "route.", "phase_model.", "awb_number_declared")
 TOLERANCE = 0.051
 
 AWB_RE = re.compile(r"\b\d{3}-\d{8}\b")
 DATE_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 TIME_RE = re.compile(r"\b([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?\b")
-RULE_ID_RE = re.compile(r"\b[RCNHI]\d{1,2}\b")
-NUMBER_RE = re.compile(r"(?<![\w.])-?\d+(?:[.,]\d+)?(?![\w])")
+ID_RE = re.compile(r"\b[RCNHI]\d+\b")
+NUMBER_RE = re.compile(r"(?<![\w.])\d+(?:[.,]\d+)?")  # "31C", "45min" are caught too
+NUMBER_WORDS = re.compile(
+    r"\b(two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|"
+    r"sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|"
+    r"hundred|thousand|dozen|deux|trois|quatre|cinq|sept|huit|neuf|onze|douze|treize|quatorze|"
+    r"quinze|seize|vingt|trente|quarante|cinquante|soixante|cent|mille|douzaine)s?\b", re.IGNORECASE)
 
 
 class Verifier:
@@ -97,6 +104,7 @@ class Verifier:
             return ["no evidence cited"]
 
         grounded = _Grounding()
+        grounded.ids = set(self.rules) | {str(claim.get("id", ""))}
         for item in evidence:
             problem = self._resolve(item, grounded)
             if problem:
@@ -118,6 +126,7 @@ class Verifier:
         forbidden = find_forbidden(statement)
         if forbidden:
             reasons.append(f"forbidden vocabulary: {', '.join(forbidden)}")
+        grounded.ids |= {str(e.get("id")) for e in evidence if e.get("id")}
         reasons += grounded.ungrounded(statement)
         return reasons
 
@@ -136,7 +145,7 @@ class Verifier:
             if not rows:
                 return f"no samples between {item['start']} and {item['end']}"
             series = item.get("series")
-            if series not in rows[0]:
+            if series not in SERIES:
                 return f"unknown series {series!r}"
             values = [r[series] for r in rows]
             grounded.numbers += values + [round(v) for v in values]
@@ -151,10 +160,15 @@ class Verifier:
             grounded.dates.add(item["end"][:10])
             return None
         if kind == "dossier_field":
+            path = item.get("path") or ""
+            if not path.startswith(DOSSIER_PREFIXES):
+                return f"dossier field {path!r} is not a citable entry-record field"
             try:
-                value = get_path(self.record, item["path"])
-            except (KeyError, IndexError, TypeError):
-                return f"dossier field {item.get('path')!r} not found"
+                value = get_path(self.record, path)
+            except (KeyError, IndexError, TypeError, ValueError):
+                return f"dossier field {path!r} not found"
+            if isinstance(value, dict) or (isinstance(value, list) and any(isinstance(v, dict) for v in value)):
+                return f"dossier field {path!r} is not a single value; cite a leaf field"
             grounded.add_value(value)
             return None
         if kind == "document_field":
@@ -217,23 +231,26 @@ class Verifier:
                     and e.get("series") == rule.check["series"]]
         if not segments:
             return reasons + [f"a curve segment of {rule.check['series']} must be cited"]
-        breach = False
-        for item in segments:
-            start, end = parse_ts(item["start"]), parse_ts(item["end"])
-            for row in self.curve:
-                moment = parse_ts(row["timestamp"])
-                if start <= moment <= end:
-                    phase = phase_at(self.phases, row["timestamp"])
-                    if _applies(rule, phase) and _out_of_bounds(rule, row[rule.check["series"]], threshold):
-                        breach = True
-        if not breach:
-            reasons.append(f"the cited segment does not break {rule.id}")
-
         interval = claim.get("interval") or {}
         try:
             first, last = parse_ts(interval["start"]), parse_ts(interval["end"])
-        except (KeyError, ValueError):
+        except (KeyError, ValueError, AttributeError):
             return reasons + ["deviation claim needs an interval"]
+        if last < first:
+            return reasons + ["interval ends before it starts"]
+        inside = [item for item in segments
+                  if parse_ts(item["start"]) <= first and last <= parse_ts(item["end"])]
+        if not inside:
+            reasons.append("the interval must lie inside a cited curve segment")
+        breach = False
+        for row in self.curve:
+            moment = parse_ts(row["timestamp"])
+            if first <= moment <= last:
+                phase = phase_at(self.phases, row["timestamp"])
+                if _applies(rule, phase) and _out_of_bounds(rule, row[rule.check["series"]], threshold):
+                    breach = True
+        if not breach:
+            reasons.append(f"the claimed interval does not break {rule.id}")
 
         def overlaps(start, end) -> bool:
             return start <= last and end >= first
@@ -243,8 +260,11 @@ class Verifier:
         windows = [self.windows[e["id"]] for e in evidence if e.get("type") == "inspection_window"]
         explaining_notes = [n for n in notes
                             if first - NOTE_WINDOW <= parse_ts(n["time"]) <= last + NOTE_WINDOW]
-        explaining_answers = [a for a in answers if a.get("start") and a.get("end")
-                              and overlaps(parse_ts(a["start"]), parse_ts(a["end"]))]
+        # A recorded answer explains only if it is about this interval; the default
+        # "no information" answer never explains. Whether its words actually explain the
+        # deviation is the agent's judgement, shown verbatim in the record for the signatories.
+        explaining_answers = [a for a in answers if not a.get("default") and a.get("start")
+                              and a.get("end") and overlaps(parse_ts(a["start"]), parse_ts(a["end"]))]
 
         if status in ("explained_compliant", "explained_rule_exceeded"):
             if not explaining_notes and not explaining_answers:
@@ -277,12 +297,15 @@ class Verifier:
             needed = {(check["document"], check["field"])} if check["type"] == "crate_awb_matches" else set()
             if not cited_crates:
                 return ["crate rules must cite the crate features they rely on"]
-            if status == "satisfied" and cited_crates != set(self.observations.get("crates", {})):
+            all_crates = set(self.observations.get("expected_crates") or self.observations.get("crates", {}))
+            if status == "satisfied" and cited_crates != all_crates:
                 return ["a satisfied crate rule must cite every crate"]
         missing = needed - cited_docs
         if missing:
             return [f"missing cited fields: {sorted(missing)}"]
         subset = {"documents": self.observations.get("documents", {}),
+                  "expected_crates": sorted(cited_crates) if status == "violated" else
+                  self.observations.get("expected_crates"),
                   "crates": {k: v for k, v in self.observations.get("crates", {}).items()
                              if not cited_crates or k in cited_crates}}
         outcome = evaluate_rule(rule, subset)["outcome"]
@@ -299,6 +322,7 @@ class _Grounding:
         self.times: list = []
         self.dates: set[str] = set()
         self.awbs: set[str] = set()
+        self.ids: set[str] = set()
 
     def add_value(self, value) -> None:
         if isinstance(value, bool) or value is None:
@@ -325,7 +349,12 @@ class _Grounding:
 
     def ungrounded(self, statement: str) -> list[str]:
         reasons = []
-        text = RULE_ID_RE.sub(" ", statement)
+        for token in ID_RE.findall(statement):
+            if token not in self.ids:
+                reasons.append(f"identifier {token} is not a known rule or cited evidence")
+        text = ID_RE.sub(" ", statement)
+        for word in NUMBER_WORDS.findall(text):
+            reasons.append(f"spelled-out number '{word}': write numbers as digits from the evidence")
         for awb in AWB_RE.findall(text):
             if awb not in self.awbs:
                 reasons.append(f"air waybill number {awb} is not in the evidence")

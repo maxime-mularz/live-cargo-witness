@@ -24,7 +24,8 @@ def test_scripted_run_scores_perfectly(tmp_path):
     assert metrics["missing_results"] == 0
     assert metrics["CA-03 defects blocked with the right rule"] == {"passed": 6, "total": 6}
     assert metrics["CA-04 false blocks on compliant dossiers"] == {"count": 0, "total": 4}
-    assert metrics["CA-07 handler called when (and only when) needed"] == {"passed": 10, "total": 10}
+    assert metrics["CA-07 handler called when (and only when) needed"] == {"passed": 14, "total": 14}
+    assert metrics["CA-07 on dossiers with deviations only"] == {"passed": 10, "total": 10}
     assert metrics["CA-08 false positives dismissed"] == {"passed": 2, "total": 2}
     assert metrics["CA-09 indeterminate after asking"] == {"passed": 2, "total": 2}
 

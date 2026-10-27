@@ -19,7 +19,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .dossier import Dossier, write_json
+from .deviations import detect
 from .hashing import canonical_json, sha256_bytes, sha256_file
+from .phases import segment
+from .predeparture import evaluate
 from .rules import Rule
 from .verifier import Verifier
 
@@ -117,7 +120,9 @@ def render_markdown(pv: dict) -> str:
               "It is not valid until signed by the three parties below.", ""]
     lines += [f"- {who}: name ____________________  date ____________  signature ____________"
               for who in SIGNATORIES]
-    lines += ["", f"Root hash (SHA-256 of manifest.json): see `manifest.json` → `root`.", ""]
+    lines += ["", "Integrity: `manifest.json` lists the SHA-256 of every file of this record; its `root` "
+              "field is the SHA-256 of that list. Publish or sign the root to make later changes "
+              "detectable by anyone.", ""]
     return "\n".join(lines)
 
 
@@ -129,6 +134,15 @@ def write_case(case_dir: Path | str, dossier: Dossier, rules: dict[str, Rule], c
     report = Verifier(dossier, rules, observations).check(claims)
     if report["rejected"]:
         raise RejectedClaims(report["rejected"])
+    # The decision and the unapplied rules are recomputed, never taken from the caller.
+    recomputed = evaluate(rules, observations)
+    if pre_departure.get("decision") != recomputed["decision"]:
+        raise ValueError(f"pre-departure decision {pre_departure.get('decision')!r} does not match "
+                         f"the readings ({recomputed['decision']!r})")
+    pre_departure = recomputed
+    curve = dossier.curve()
+    unresolved_rules = (detect(curve, segment(dossier.record), rules, dossier.record)["unresolved_rules"]
+                        if curve else [])
 
     case_dir = Path(case_dir)
     if case_dir.exists():

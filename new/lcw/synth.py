@@ -5,7 +5,7 @@ Produces fictitious, clearly labelled dossiers for the development bench: fake s
 parametrised peaks, transcribed convoy notes, recorded handler answers and ``expected.json``.
 
 Everything is deterministic for a given seed. Nothing here comes from a real shipment.
-Real crate photos and voice recordings are produced on the bench by the apprentice and replace
+Real crate photos and voice recordings are produced on the test bench by the team and replace
 the synthetic images and transcripts where available.
 """
 

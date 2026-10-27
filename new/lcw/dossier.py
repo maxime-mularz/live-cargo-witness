@@ -24,7 +24,12 @@ ISO_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 
 
 def parse_ts(value: str) -> datetime:
-    return datetime.strptime(value, ISO_FORMAT).replace(tzinfo=timezone.utc)
+    """Parse an ISO 8601 timestamp (``Z`` or ``+00:00`` offsets, models emit both) into UTC.
+    A timestamp without offset is taken as UTC."""
+    moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(timezone.utc)
 
 
 def format_ts(value: datetime) -> str:

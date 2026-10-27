@@ -82,7 +82,8 @@ def score_bench(bench_dir: Path | str, results_dir: Path | str) -> dict:
         "CA-03 defects blocked with the right rule": ratio(defects, "phase1_ok"),
         "CA-04 false blocks on compliant dossiers": {
             "count": sum(r["false_block"] for r in compliant), "total": len(compliant)},
-        "CA-07 handler called when (and only when) needed": ratio(with_deviations, "handler_ok"),
+        "CA-07 handler called when (and only when) needed": ratio(investigated, "handler_ok"),
+        "CA-07 on dossiers with deviations only": ratio(with_deviations, "handler_ok"),
         "CA-08 false positives dismissed": ratio([r for r in rows if r["category"] == "false_positive"],
                                                  "investigation_ok"),
         "CA-09 indeterminate after asking": ratio([r for r in rows if r["category"] == "indeterminate"],

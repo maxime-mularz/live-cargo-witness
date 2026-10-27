@@ -29,9 +29,13 @@ voice notes and the ground crew's answers.
    cards, matches them with the notes, and decides on its own when to ask the ground handler.
    Each deviation ends up explained, dismissed as a false positive, or **indeterminate** — the
    agent is allowed to say it does not know.
-4. **Handover record** — every statement goes through a **non-AI verifier** that rejects any claim
-   without a rule and a piece of evidence, and any number, time or date that the evidence does not
-   contain. The record is hashed (SHA-256) so anyone can check it was not altered.
+4. **Handover record** — every statement goes through a **non-AI verifier**. It rejects any claim
+   without a rule card and a piece of evidence, checks that the cited sensor interval really breaks
+   the rule, and checks that the numbers, times, dates and identifiers in the statement come from
+   the evidence. Whether a ground handler's answer actually explains a deviation stays the agent's
+   judgement: the answer is quoted verbatim in the record, for the three signatories to see.
+   Every file of the record is listed with its SHA-256; publishing or signing the root hash makes
+   any later change detectable.
 
 ## Meta models
 
