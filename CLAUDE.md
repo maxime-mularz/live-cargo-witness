@@ -74,13 +74,14 @@ docstring and `.env.example`. On Baseten the model id is `meta-models/muse-spark
 Meta id `/v1/models` lists; `meta-models/muse-spark-open-1026` answers 404).
 - Run live on the keyed machine (night runs, `new/notes/night-*.md`): Muse Spark Open as
   orchestrator and reader, SAM 3.1, CA-02 (`test_ca02.py`), the dev and demo benches; Muse Spark
-  as fallback orchestrator (`LCW_ORCHESTRATOR=spark`) on the demo bench.
-- Tested offline only (fake transport), NOT yet run live: Muse Voice Transcribe (no recording in
-  any dossier yet) and `write_record_text`.
+  as fallback orchestrator (`LCW_ORCHESTRATOR=spark`) on the demo bench; Muse Voice Transcribe on
+  synthetic speech (a copy of DEMO-02 with text-to-speech WAVs, outside the repo — no dossier in
+  the repo has a recording yet).
+- Tested offline only (fake transport), NOT yet run live: `write_record_text`.
 
 Left:
 - Record the voice notes and answers (`recording_list.py`); `.m4a` needs ffmpeg, a 16 kHz mono
-  WAV does not. Then run DEMO-02 live again to validate Muse Voice Transcribe.
+  WAV does not. Then run DEMO-02 live again with the human recordings before filming.
 - Prompt tuning happens in `lcw/prompts.py`, on `bench/dev` and `bench/demo` only.
 - After the freeze: `unseal_bench.py` once, score published as is (rule 9).
 

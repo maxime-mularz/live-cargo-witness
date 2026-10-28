@@ -10,8 +10,8 @@ Marfik Group. Built for live-animal shipments subject to the IATA Live Animals R
 affiliated with or endorsed by IATA.
 
 > **Status: work in progress (day 3).** The deterministic core, the evaluation benches, the agent
-> loop and the journal page are in place. The agent runs live on Muse Spark Open and SAM 3.1;
-> Muse Voice Transcribe is tested offline only, until the voice recordings are made.
+> loop and the journal page are in place. The agent runs live on Muse Spark Open, SAM 3.1 and
+> Muse Voice Transcribe (so far on synthetic speech; the human voice recordings are still to make).
 
 ## Why
 
@@ -65,7 +65,7 @@ Everything under [`new/`](new/) was written during the event (see the dated git 
 | Bench scoring | `new/lcw/score.py` | done |
 | Two-stage agent loop and prompts | `new/lcw/agent.py`, `new/lcw/prompts.py` | done, tested with a scripted client |
 | Investigation journal page | `new/lcw/journal_page.py` | done |
-| Meta model adapters (written from the providers' docs) | `new/lcw/models.py` | Muse Spark Open, SAM 3.1 and the Muse Spark fallback run live; Muse Voice Transcribe tested offline only |
+| Meta model adapters (written from the providers' docs) | `new/lcw/models.py` | Muse Spark Open, SAM 3.1, the Muse Spark fallback and Muse Voice Transcribe (synthetic speech) run live |
 | The three filmed scenarios as fictitious dossiers | `new/bench/demo/` | done |
 | Acceptance checks: CA-02 tool calling, CA-06 unsourced claims, CA-12 time and cost, CA-13 outputs scan | `new/scripts/test_ca02.py`, `check_ca06.py`, `score.py`, `check_release.py --outputs` | CA-02 passed live; CA-12 and CA-13 run on live outputs; CA-06 offline |
 | Dossier format specification | `new/bench/FORMAT.md` | done |
