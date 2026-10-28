@@ -106,7 +106,7 @@ python new/scripts/run_bench.py new/bench/dev                   # whole bench, l
 python new/scripts/run_bench.py new/bench/dev --dry-run         # plumbing check, no model
 python new/scripts/score_bench.py new/bench/dev <out>/results   # re-score existing results
 python new/scripts/seal_bench.py <folder> [--check <seal_file>] # seal of a bench folder
-python new/scripts/recording_list.py DEV-02 DEV-07  # sentences to record (voice/audio/<id>.m4a)
+python new/scripts/recording_list.py DEMO-02 DEV-02  # sentences to record, demo and dev (.m4a needs ffmpeg)
 python new/scripts/generate_bench.py [--demo]       # regenerate bench/dev (or bench/demo), deterministic
 python new/scripts/check_ca06.py                    # CA-06: 5 unsourced claims injected, 5 rejected
 python new/scripts/verify_case.py <case_dir>        # recompute the PV hashes

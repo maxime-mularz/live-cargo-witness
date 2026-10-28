@@ -31,3 +31,12 @@ def test_output_scan_finds_forbidden_words_in_records(tmp_path):
     report = release.Report()
     release.check_outputs(report, tmp_path)
     assert report.failures == ["cases/X/pv.md: forbidden vocabulary ['sick']"]
+
+
+def test_recording_list_covers_the_demo_dossiers(monkeypatch, capsys):
+    # DEMO-02's handler answer is filmed: it must be on the list of sentences to record.
+    monkeypatch.setattr(sys, "argv", ["recording_list.py", "DEMO-02", "DEV-02"])
+    load("recording_list").main()
+    out = capsys.readouterr().out
+    assert "| DEMO-02 | new/bench/demo/DEMO-02/voice/audio/H1.m4a | ground handler |" in out
+    assert "| DEV-02 | new/bench/dev/DEV-02/voice/audio/H1.m4a | ground handler |" in out
