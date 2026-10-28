@@ -15,7 +15,7 @@ so the request on the wire is exactly what is written here.
 Configuration (environment, see ``.env.example``; keys are never printed — errors go through
 ``lcw.env.redact``):
 - ``BASETEN_API_KEY``; ``LCW_OPEN_BASE_URL`` (default ``https://inference.baseten.co/v1``);
-  ``LCW_OPEN_MODEL`` (default ``meta-models/muse-spark-open-1026``, the hackathon id).
+  ``LCW_OPEN_MODEL`` (default ``meta-models/muse-spark-open``, the id Baseten lists on /v1/models).
 - ``META_MODEL_API_KEY`` (or ``MODEL_API_KEY``, the name used in Meta's docs); ``LCW_META_BASE_URL``
   (default ``https://api.meta.ai/v1``); ``LCW_SPARK_MODEL`` (default ``muse-spark-1.3``).
 - ``LCW_ORCHESTRATOR``: ``open`` (default, Muse Spark Open) or ``spark`` (fallback if CA-02
@@ -85,7 +85,7 @@ class Endpoint:
 
 def open_endpoint() -> Endpoint:
     return Endpoint(os.environ.get("LCW_OPEN_BASE_URL", "https://inference.baseten.co/v1").rstrip("/"),
-                    os.environ.get("LCW_OPEN_MODEL", "meta-models/muse-spark-open-1026"),
+                    os.environ.get("LCW_OPEN_MODEL", "meta-models/muse-spark-open"),
                     ("BASETEN_API_KEY",), "Muse Spark Open")
 
 

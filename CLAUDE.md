@@ -71,7 +71,8 @@ Written from the providers' docs, tested offline with a fake transport, NOT yet 
 - `lcw/models.py` — adapters for Muse Spark Open (Baseten, OpenAI-compatible Chat Completions),
   SAM 3.1 (Meta Model API `/v1/responses`, streamed special-token boxes), Muse Voice Transcribe
   (`/v1/asr/transcribe`, 16 kHz mono WAV), Muse Spark (Meta Model API). Configuration in the module
-  docstring and `.env.example`. On Baseten the hackathon model id is `meta-models/muse-spark-open-1026`.
+  docstring and `.env.example`. On Baseten the model id is `meta-models/muse-spark-open` (the
+  only Meta id `/v1/models` lists; `meta-models/muse-spark-open-1026` answers 404).
 
 Left for the machine that holds the API keys (with Claude Code or Muse Code):
 - Validate the adapters with `python new/scripts/test_ca02.py`; fix any request format against the

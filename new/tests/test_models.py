@@ -72,7 +72,7 @@ def test_chat_follows_the_openai_tool_format(keys, monkeypatch):
     assert request.full_url == "https://inference.baseten.co/v1/chat/completions"
     assert request.get_header("Authorization") == "Bearer bt-test-key-123456"
     body = fake.body()
-    assert body["model"] == "meta-models/muse-spark-open-1026" and body["tool_choice"] == "auto"
+    assert body["model"] == "meta-models/muse-spark-open" and body["tool_choice"] == "auto"
     assert body["tools"][0] == {"type": "function", "function": {
         "name": TOOL_SCHEMAS[0]["name"], "description": TOOL_SCHEMAS[0]["description"],
         "parameters": TOOL_SCHEMAS[0]["parameters"]}}
