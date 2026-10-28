@@ -67,18 +67,22 @@ Built offline (no network needed, fully tested):
 - `lcw/runner.py` — runs the agent on a dossier or a bench, writes results, cases and raw runs.
 - `lcw/score.py` — bench scoring against `expected.json`.
 
-Written from the providers' docs, tested offline with a fake transport, NOT yet run live:
-- `lcw/models.py` — adapters for Muse Spark Open (Baseten, OpenAI-compatible Chat Completions),
-  SAM 3.1 (Meta Model API `/v1/responses`, streamed special-token boxes), Muse Voice Transcribe
-  (`/v1/asr/transcribe`, 16 kHz mono WAV), Muse Spark (Meta Model API). Configuration in the module
-  docstring and `.env.example`. On Baseten the model id is `meta-models/muse-spark-open` (the
-  only Meta id `/v1/models` lists; `meta-models/muse-spark-open-1026` answers 404).
+`lcw/models.py` — adapters for Muse Spark Open (Baseten, OpenAI-compatible Chat Completions),
+SAM 3.1 (Meta Model API `/v1/responses`, streamed special-token boxes), Muse Voice Transcribe
+(`/v1/asr/transcribe`, 16 kHz mono WAV), Muse Spark (Meta Model API). Configuration in the module
+docstring and `.env.example`. On Baseten the model id is `meta-models/muse-spark-open` (the only
+Meta id `/v1/models` lists; `meta-models/muse-spark-open-1026` answers 404).
+- Run live on the keyed machine (night runs, `new/notes/night-*.md`): Muse Spark Open as
+  orchestrator and reader, SAM 3.1, CA-02 (`test_ca02.py`), the dev and demo benches; Muse Spark
+  as fallback orchestrator (`LCW_ORCHESTRATOR=spark`) on the demo bench.
+- Tested offline only (fake transport), NOT yet run live: Muse Voice Transcribe (no recording in
+  any dossier yet) and `write_record_text`.
 
-Left for the machine that holds the API keys (with Claude Code or Muse Code):
-- Validate the adapters with `python new/scripts/test_ca02.py`; fix any request format against the
-  provider's docs — do not guess. If CA-02 fails, set `LCW_ORCHESTRATOR=spark`.
-- Then: `python new/scripts/run_agent.py new/bench/dev/DEV-02` (scenario 2), then the whole bench.
-- Prompt tuning happens in `lcw/prompts.py`, on `bench/dev` only.
+Left:
+- Record the voice notes and answers (`recording_list.py`); `.m4a` needs ffmpeg, a 16 kHz mono
+  WAV does not. Then run DEMO-02 live again to validate Muse Voice Transcribe.
+- Prompt tuning happens in `lcw/prompts.py`, on `bench/dev` and `bench/demo` only.
+- After the freeze: `unseal_bench.py` once, score published as is (rule 9).
 
 ## Agent tools (contract)
 

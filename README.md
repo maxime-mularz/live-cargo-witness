@@ -9,8 +9,9 @@ Built for the Meta Global AI Developer Hackathon (Oct 27 – Nov 4, 2026), Start
 Marfik Group. Built for live-animal shipments subject to the IATA Live Animals Regulations; not
 affiliated with or endorsed by IATA.
 
-> **Status: work in progress (day 2).** The deterministic core, the evaluation benches, the agent
-> loop and the journal page are in place and tested offline. The Meta model adapters are being wired next.
+> **Status: work in progress (day 3).** The deterministic core, the evaluation benches, the agent
+> loop and the journal page are in place. The agent runs live on Muse Spark Open and SAM 3.1;
+> Muse Voice Transcribe is tested offline only, until the voice recordings are made.
 
 ## Why
 
@@ -64,9 +65,9 @@ Everything under [`new/`](new/) was written during the event (see the dated git 
 | Bench scoring | `new/lcw/score.py` | done |
 | Two-stage agent loop and prompts | `new/lcw/agent.py`, `new/lcw/prompts.py` | done, tested with a scripted client |
 | Investigation journal page | `new/lcw/journal_page.py` | done |
-| Meta model adapters (written from the providers' docs, tested offline; live validation pending) | `new/lcw/models.py` | in progress |
+| Meta model adapters (written from the providers' docs) | `new/lcw/models.py` | Muse Spark Open, SAM 3.1 and the Muse Spark fallback run live; Muse Voice Transcribe tested offline only |
 | The three filmed scenarios as fictitious dossiers | `new/bench/demo/` | done |
-| Acceptance checks: CA-02 tool calling, CA-06 unsourced claims, CA-12 time and cost, CA-13 outputs scan | `new/scripts/test_ca02.py`, `check_ca06.py`, `score.py`, `check_release.py --outputs` | done offline |
+| Acceptance checks: CA-02 tool calling, CA-06 unsourced claims, CA-12 time and cost, CA-13 outputs scan | `new/scripts/test_ca02.py`, `check_ca06.py`, `score.py`, `check_release.py --outputs` | CA-02 passed live; CA-12 and CA-13 run on live outputs; CA-06 offline |
 | Dossier format specification | `new/bench/FORMAT.md` | done |
 | Reserved bench (5 independent dossiers, encrypted until the code freeze) | `new/bench/reserved.*` | sealed, opened after the freeze |
 | Quality gates: lint, cross-file consistency tests, pre-push release check | `pyproject.toml`, `new/tests/test_consistency.py`, `new/scripts/check_release.py` | done |
@@ -80,7 +81,8 @@ Two scores will be published side by side:
   seal (SHA-256) published before the code freeze, decrypted once after the freeze, and their
   score is published as is.
 
-Until the agent is wired, the only score here is a plumbing check of the scoring code itself.
+No score is published here yet. Live runs on the development bench are reported, as development
+scores, in [`new/notes/`](new/notes/).
 
 All data in this repository is **fictitious and labelled SYNTHETIC**. No real shipment, client,
 document or photo is used.
