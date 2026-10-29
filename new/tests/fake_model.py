@@ -14,7 +14,7 @@ from helpers import scripted_run
 class ScriptedClient:
     model_name = "scripted test client (not a model)"
 
-    def __init__(self, folder, bad_first_submission: bool = False):
+    def __init__(self, folder, bad_first_submission: bool = False, draft_for: str | None = None):
         tools, pre, claims, result = scripted_run(folder)
         self.dossier = tools.dossier
         self.pre = pre
@@ -44,6 +44,8 @@ class ScriptedClient:
                 bad[0]["statement"] += " About 37 crates were affected."
                 stage2.append(("write_case_file", {"claims": bad, "reason": "Record the deviations."}))
             stage2.append(("write_case_file", {"claims": dev_claims, "reason": "Record the deviations."}))
+        if draft_for:  # off by default: the dry run never drafts, as the real agent may not
+            stage2.append(("draft_notification", {"recipient": draft_for, "reason": "Prepare the draft."}))
         stage2.append(("final", {"summary": "Investigation done."}))
         self.plans = {"STAGE 1": stage1, "STAGE 2": stage2}
         self.calls = 0

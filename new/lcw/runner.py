@@ -33,7 +33,8 @@ def run_dossier(folder: Path | str, out_dir: Path | str, client: ModelClient | N
     if case_status is None:
         try:
             write_case(case_dir, dossier, tools.rules, tools.accepted,
-                       tools.observations, run.deterministic_pre_departure, tools.journal)
+                       tools.observations, run.deterministic_pre_departure, tools.journal,
+                       drafts=[d["recipient"] for d in tools.drafts])
             case_status = "written"
         except (RejectedClaims, ValueError) as error:  # IncompleteCase is a ValueError
             case_status = f"refused: {error}"

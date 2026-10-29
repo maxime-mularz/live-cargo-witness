@@ -24,7 +24,7 @@ matching assertion there.
 | A document or crate field | `synth.py` truth files, `FORMAT.md`, `models.read_document_image` / `segment_crate_image` docstrings, `scripts/test_ca02.py` | `test_format_md_documents_every_dossier_field` |
 | A module or a script | `CLAUDE.md` (layout / built list / commands), `README.md` if user-facing | `test_claude_md_lists_every_module_and_script` |
 | The result format (`results/<id>.json`) | `agent.run`, `runner.py`, `score.py`, `tests/helpers.scripted_run` | `test_agent.py`, `test_score.py` |
-| The record (pv.json / pv.md) | `casefile.write_case`, `render_markdown`, `journal_page.render`, `verify_case`, `scripts/verify_case.py` | `test_casefile.py` |
+| The record (pv.json / pv.md, drafts/) | `casefile.write_case`, `render_markdown`, `journal_page.render`, `drafts.render_draft`, `verify_case`, `scripts/verify_case.py` | `test_casefile.py`, `test_drafts.py` |
 | A metric or acceptance criterion (CA-xx) | `score.py`, `README.md` Evaluation, the CDC in Claude Docs (tell Maxime; do not edit his doc without asking) | `test_score.py` |
 | The bench generator | regenerate with `generate_bench.py` (never hand-edit `expected.json`), then run the suite | `test_synth.py` |
 | What is built / left | `CLAUDE.md` "What is built and what is left", `README.md` status table | review |
