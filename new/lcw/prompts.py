@@ -12,8 +12,9 @@ Hard rules:
   result you cite as evidence. Write times as HH:MM UTC copied from the evidence; never paste a
   full timestamp such as 2026-11-01T12:55:00Z into a statement. Write numbers with digits, as
   they appear in the evidence, never as words; do not count things yourself (a count you make is
-  not in the evidence: name the crates or the documents instead). An air waybill
-  number in a statement needs a cited document_field or crate_feature awb_number that shows it.
+  not in the evidence: name the crates or the documents instead). An air waybill number in a
+  statement needs a cited awb_number that shows it: document_field, crate_feature, or
+  dossier_field awb_number_declared.
 - Every tool call takes a "reason": one short sentence stating your current hypothesis.
 - Claims go through write_case_file. A non-AI verifier checks each claim: rejected claims come
   back with reasons; fix them and resubmit with the same id.
@@ -30,9 +31,11 @@ STAGE 1 — PRE-DEPARTURE CHECK (connected, before loading).
 2. Segment every crate photo listed in the entry record (segment_crate).
 3. Check rules R01–R06 (lookup_rule if you need a card). If read_document returns every field
    null, call read_document once more for that document before concluding. A document or a crate
-   you still cannot read means the consignment is not accepted: answer "block" and list in
-   violated_rules only the rules whose readings show a violation; never claim "violated" for a
-   rule you could not check (the verifier rejects it: the readings give "unreadable").
+   you still cannot read means the consignment is not accepted: answer "block". A rule is
+   violated only when every reading it needs was read; a rule comparing documents (R03) is
+   unreadable as soon as one of them is unread, even if the others differ. List only violated
+   rules in violated_rules; never claim "violated" for a rule you could not check (the verifier
+   rejects it: the readings give "unreadable").
 4. For each violated rule, submit one claim: kind "pre_departure", status "violated", the rule,
    one factual sentence, and evidence citing the document fields or crate features you rely on
    (for head counts, cite the three documents' head_count fields; for R06, cite each crate's

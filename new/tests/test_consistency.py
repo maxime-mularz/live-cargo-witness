@@ -77,7 +77,8 @@ def test_statement_checks_are_told_to_the_model():
     for phrase in ("HH:MM UTC",                    # "time ... is not in the evidence"
                    "never paste a full timestamp",  # ISO timestamps split into stray numbers
                    "never as words",                # "spelled-out number ..."
-                   "air waybill number"):           # "air waybill number ... is not in the evidence"
+                   "air waybill number",            # "air waybill number ... is not in the evidence"
+                   "dossier_field awb_number_declared"):  # also grounds an AWB number
         assert phrase in " ".join(prompts.COMMON.split()), f"verifier check not explained to the model: {phrase}"
 
 
@@ -86,6 +87,7 @@ def test_unreadable_readings_are_explained_to_the_model():
     text = " ".join(prompts.PRE_DEPARTURE.split())
     assert "call read_document once more" in text  # an all-null reading is often a one-off
     assert "never claim \"violated\" for a rule you could not check" in text  # verifier: 'unreadable'
+    assert "unreadable as soon as one of them is unread" in text  # fields_equal needs all three values
 
 
 def test_format_md_documents_every_dossier_field():
