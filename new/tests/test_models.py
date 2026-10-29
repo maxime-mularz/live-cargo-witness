@@ -168,6 +168,26 @@ def test_a_document_empty_twice_stays_unread(keys, monkeypatch):
     assert len(fake.requests) == 2  # one more try, not a loop
 
 
+def test_an_empty_reading_written_as_blank_strings_is_retried(keys, monkeypatch):
+    # Review of 2026-10-29: "" and [] coerce to [] for list fields, which the retry took for a reading.
+    image = dossier_dirs()[0] / "documents" / "loading_list.png"
+    blank = {"fields": {"awb_number": "", "head_count": None, "crates": []}, "boxes": {}}
+    full = {"fields": {"awb_number": "000-1", "head_count": 9, "crates": None}, "boxes": {}}
+    fake = Transport(completion(content=json.dumps(blank)), completion(content=json.dumps(full)))
+    monkeypatch.setattr(models, "_send", fake)
+    assert models.read_document_image(image, "loading_list")["head_count"] == 9 and len(fake.requests) == 2
+
+
+def test_a_blank_reading_twice_is_unread_not_an_empty_list(keys, monkeypatch):
+    # An unread air waybill must give R01 "unreadable", never "violated" for want of the AVI code.
+    image = dossier_dirs()[0] / "documents" / "awb.png"
+    blank = {"fields": {name: "" for name in DOCUMENT_FIELDS["awb"]}, "boxes": {}}
+    fake = Transport(*(completion(content=json.dumps(blank)) for _ in range(2)))
+    monkeypatch.setattr(models, "_send", fake)
+    read = models.read_document_image(image, "awb")
+    assert all(value is None for name, value in read.items() if name != "_regions")
+
+
 def test_truth_files_match_the_field_schema():
     for folder in dossier_dirs():
         for document, fields in DOCUMENT_FIELDS.items():

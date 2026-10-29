@@ -298,6 +298,11 @@ def _vision_json(endpoint: Endpoint, image: Path | bytes, instruction: str, keys
 EMPTY_READING_RETRIES = 1
 
 
+def _empty(value) -> bool:
+    """No value read: list fields coerce "" and [] to [], which must not pass for a reading."""
+    return value is None or value == [] or value == ""
+
+
 def read_document_image(image: Path, document: str) -> dict:
     """Muse Spark Open (vision). Return ``{field_name: value}`` for the fields of ``document``
     (``awb``, ``certification`` or ``loading_list``, see ``lcw.schema``), plus
@@ -311,8 +316,10 @@ def read_document_image(image: Path, document: str) -> dict:
     for _ in range(1 + EMPTY_READING_RETRIES):
         answer = _vision_json(open_endpoint(), Path(image), instruction, ("fields",))
         read = coerce_document(document, answer.get("fields") if isinstance(answer.get("fields"), dict) else answer)
-        if any(value is not None for value in read.values()):
+        if not all(_empty(value) for value in read.values()):
             break
+    else:  # empty every time: unread, so a rule like R01 is unreadable, not violated for an empty list
+        read = dict.fromkeys(read)
     read["_regions"] = _to_pixels(answer.get("boxes"), Path(image))
     return read
 
