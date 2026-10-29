@@ -37,3 +37,11 @@ def test_french_equivalents_of_every_english_stem():
 def test_french_record_words_are_not_forbidden():
     assert find_forbidden("Écart expliqué, règle dépassée ; faux positif écarté ; indéterminé. "
                           "Expéditeur, transporteur, agent d'escale. La version anglaise fait foi.") == []
+
+
+def test_the_english_word_veto_is_not_forbidden():
+    # Review of 2026-10-29: the French stem "véto" also caught the English "veto".
+    from lcw.vocab import find_forbidden
+
+    assert find_forbidden("The carrier's veto on loading was recorded at 06:10 UTC.") == []
+    assert find_forbidden("appeler le véto") != []

@@ -57,7 +57,7 @@ FORBIDDEN_STEMS = (
     ("mourir", r"mour(ir|ant\w*|ra\w*|ut|urent)|meur(s|t|ent)"),
     ("détresse", r"d[ée]tresse\w*"),
     ("fiévreux", r"fi[ée]vreu\w*"),
-    ("véto", r"v[ée]tos?"),
+    ("véto", r"vétos?"),
 )
 
 _PATTERNS = [(label, re.compile(r"(?<![\w-])(?:" + stem + r")(?![\w-])", re.IGNORECASE))
