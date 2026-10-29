@@ -117,16 +117,18 @@ TOOL_SCHEMAS = [
 
 
 def _utc(value):
-    """``value`` as canonical UTC (``...Z``) when it is a timestamp to the second; anything else
-    (not a string, not a timestamp, a fraction of a second) is returned as is, for the verifier to
-    judge as sent."""
+    """``value`` rewritten in UTC (``...Z``) when it is a timestamp, keeping any fraction of a second
+    (truncating it could make an interval the verifier rejects pass); anything else is returned as
+    is, for the verifier to judge as sent."""
     if not isinstance(value, str):
         return value
     try:
         moment = parse_ts(value)
-        return value if moment.microsecond else format_ts(moment)
     except (ValueError, OverflowError):
         return value
+    if moment.microsecond:
+        return moment.isoformat(timespec="microseconds").replace("+00:00", "Z")
+    return format_ts(moment)
 
 
 def _rewritten(sent: dict, checked: dict) -> list[str]:
@@ -360,7 +362,8 @@ class Toolset:
         sent_by_id = {id(c): s for c, s in zip(checked, to_check, strict=True)}
         for entry in report["rejected"]:
             changes = _rewritten(sent_by_id.get(id(entry["claim"]), {}), entry["claim"])
-            if changes:
+            about_time = any(r.startswith(("date ", "time ")) for r in entry["reasons"])
+            if changes and about_time:
                 entry["reasons"].append("times are recorded in UTC (" + "; ".join(sorted(set(changes)))
                                         + "): dates and times in the statement must be the UTC ones")
         rejected = early + report["rejected"]

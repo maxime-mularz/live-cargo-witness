@@ -244,3 +244,40 @@ def test_tool_calls_with_an_offset_are_logged_in_utc():
     bounds = (expected["start"], expected["end"])
     assert (logged[0]["arguments"]["start"], logged[0]["arguments"]["end"]) == bounds
     assert (logged[1]["result"]["asked_start"], logged[1]["result"]["asked_end"]) == bounds
+
+
+def test_a_fraction_of_a_second_with_an_offset_is_still_rewritten_in_utc():
+    # Third review: 18:15:00.5+05:00 was kept as sent and printed "18:15 UTC" (it is 13:15 UTC).
+    from datetime import timedelta, timezone
+
+    from lcw.dossier import parse_ts
+
+    tools, _, claims, _ = scripted_run(folder_of("explained_by_handler"))
+    tools.stage = "investigation"
+    shift = timezone(timedelta(hours=5))
+    claim = next(dict(c, interval=dict(c["interval"]), evidence=[dict(e) for e in c["evidence"]])
+                 for c in claims if c["kind"] == "deviation")
+    utc = dict(claim["interval"])
+    for item in [claim["interval"]] + [e for e in claim["evidence"] if e["type"] == "curve_segment"]:
+        for key in ("start", "end"):
+            item[key] = (parse_ts(item[key]) + timedelta(milliseconds=500)).astimezone(shift).isoformat()
+    assert tools.write_case_file([claim])["rejected"] == []
+    stored = next(c for c in tools.accepted if c["id"] == claim["id"])["interval"]
+    assert stored["start"][11:16] == utc["start"][11:16] and stored["end"][11:16] == utc["end"][11:16]
+    assert stored["start"].endswith("Z") and ".5" in stored["start"]
+
+
+def test_the_utc_note_is_added_only_to_rejections_about_dates_or_times():
+    from datetime import timedelta, timezone
+
+    from lcw.dossier import parse_ts
+
+    tools, _, claims, _ = scripted_run(folder_of("explained_by_handler"))
+    tools.stage = "investigation"
+    claim = next(dict(c, interval=dict(c["interval"]), evidence=[dict(e) for e in c["evidence"]])
+                 for c in claims if c["kind"] == "deviation")
+    for key in ("start", "end"):
+        claim["interval"][key] = parse_ts(claim["interval"][key]).astimezone(timezone(timedelta(hours=5))).isoformat()
+    claim["status"] = "violated"  # wrong status for a deviation: rejected, but not about dates or times
+    reasons = tools.write_case_file([claim])["rejected"][0]["reasons"]
+    assert not any("recorded in UTC" in r for r in reasons)
