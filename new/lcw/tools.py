@@ -117,14 +117,29 @@ TOOL_SCHEMAS = [
 
 
 def _utc(value):
-    """``value`` as canonical UTC (``...Z``) when it is a timestamp; anything else is returned as is,
-    for the verifier to judge."""
+    """``value`` as canonical UTC (``...Z``) when it is a timestamp to the second; anything else
+    (not a string, not a timestamp, a fraction of a second) is returned as is, for the verifier to
+    judge as sent."""
     if not isinstance(value, str):
         return value
     try:
-        return format_ts(parse_ts(value))
+        moment = parse_ts(value)
+        return value if moment.microsecond else format_ts(moment)
     except (ValueError, OverflowError):
         return value
+
+
+def _rewritten(sent: dict, checked: dict) -> list[str]:
+    """``sent -> checked`` for each start/end the UTC rewrite changed, so a rejection can be explained
+    in terms of what the model sent."""
+    pairs = [(sent.get("interval"), checked.get("interval"))]
+    pairs += list(zip(sent.get("evidence") or [], checked.get("evidence") or [], strict=False))
+    changes = []
+    for before, after in pairs:
+        if isinstance(before, dict) and isinstance(after, dict):
+            changes += [f"{before[k]} is {after[k]}" for k in ("start", "end")
+                        if k in before and before[k] != after[k]]
+    return changes
 
 
 def _in_utc(claim: dict) -> dict:
@@ -204,6 +219,7 @@ class Toolset:
         return features
 
     def get_sensor_curve(self, start: str | None = None, end: str | None = None) -> dict:
+        start, end = _utc(start), _utc(end)  # logged and used in UTC, like claims
         curve = self.dossier.curve()
         if curve is None:
             result = {"available": False, "reason": "no sensor curve (departure blocked or no sensor)"}
@@ -230,6 +246,7 @@ class Toolset:
         return card
 
     def ask_handler(self, question: str, start: str, end: str) -> dict:
+        start, end = _utc(start), _utc(end)  # logged and used in UTC, like claims
         first, last = parse_ts(start), parse_ts(end)
         chosen = None
         for answer in self.dossier.handler_answers():
@@ -338,7 +355,14 @@ class Toolset:
                 reasons.append(f"id {claim_id} was already used at stage {first_stage}: pick a new id")
             (early if reasons else to_check).append({"claim": claim, "reasons": reasons} if reasons else claim)
 
-        report = Verifier(self.dossier, self.rules, self.observations).check([_in_utc(c) for c in to_check])
+        checked = [_in_utc(c) for c in to_check]
+        report = Verifier(self.dossier, self.rules, self.observations).check(checked)
+        sent_by_id = {id(c): s for c, s in zip(checked, to_check, strict=True)}
+        for entry in report["rejected"]:
+            changes = _rewritten(sent_by_id.get(id(entry["claim"]), {}), entry["claim"])
+            if changes:
+                entry["reasons"].append("times are recorded in UTC (" + "; ".join(sorted(set(changes)))
+                                        + "): dates and times in the statement must be the UTC ones")
         rejected = early + report["rejected"]
         accepted_ids = {c["id"] for c in report["accepted"]}
         self.accepted = [c for c in self.accepted if c["id"] not in accepted_ids]

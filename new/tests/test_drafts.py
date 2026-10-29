@@ -160,7 +160,7 @@ def test_odd_interval_values_never_crash_the_submission():
 
 
 def test_claims_accepted_with_an_offset_are_accepted_again_when_the_record_is_written(tmp_path):
-    # Review of the UTC fix: normalising after the verifier changed the dates write_case re-checks.
+    # Regression guard: claims submitted with an offset still give a record that write_case accepts.
     from datetime import timedelta, timezone
 
     from lcw.dossier import parse_ts
@@ -206,9 +206,41 @@ def test_a_local_date_in_a_statement_is_refused_when_submitted_not_when_the_reco
                     item[key] = parse_ts(item[key]).astimezone(shift).isoformat()
         claim["statement"] = f"On {claim['interval']['start'][:10]}, " + claim["statement"]
         dated.append(claim)
-    if all(c["interval"]["start"][:10] == parse_ts(c["interval"]["start"]).strftime("%Y-%m-%d") for c in dated):
-        pytest.skip("no deviation crosses midnight under this offset")
-    report = tools.write_case_file(dated)
     crossing = [c["id"] for c in dated
                 if c["interval"]["start"][:10] != parse_ts(c["interval"]["start"]).strftime("%Y-%m-%d")]
-    assert {r["id"] for r in report["rejected"]} >= set(crossing)
+    assert crossing, "the bench dossier must have a deviation that crosses midnight under +12:00"
+    report = tools.write_case_file(dated)
+    reasons = {r["id"]: " ".join(r["reasons"]) for r in report["rejected"]}
+    assert set(reasons) >= set(crossing)
+    for claim_id in crossing:  # the model is told why, in terms of what it sent
+        assert "is not in the evidence" in reasons[claim_id] and "recorded in UTC" in reasons[claim_id]
+
+
+def test_a_timestamp_with_a_fraction_of_a_second_is_judged_as_sent():
+    # Second review: truncating 13:15:00.5 and 13:15:00.9 to 13:15:00 made a rejected interval pass.
+    tools, _, claims, _ = scripted_run(folder_of("explained_by_handler"))
+    tools.stage = "investigation"
+    claim = next(dict(c, interval=dict(c["interval"]), evidence=[dict(e) for e in c["evidence"]])
+                 for c in claims if c["kind"] == "deviation")
+    segment = next(e for e in claim["evidence"] if e["type"] == "curve_segment")
+    claim["interval"]["start"] = claim["interval"]["start"].replace(":00Z", ":00.5Z")
+    segment["start"] = segment["start"].replace(":00Z", ":00.9Z")
+    report = tools.write_case_file([claim])
+    assert [r["id"] for r in report["rejected"]] == [claim["id"]]
+
+
+def test_tool_calls_with_an_offset_are_logged_in_utc():
+    # Second review: the journal printed get_sensor_curve / ask_handler bounds as UTC from the raw string.
+    from datetime import timedelta, timezone
+
+    from lcw.dossier import parse_ts
+
+    tools, _, _ = accepted_tools()
+    expected = next(c for c in tools.accepted if c["kind"] == "deviation")["interval"]
+    local = {k: parse_ts(v).astimezone(timezone(timedelta(hours=5))).isoformat() for k, v in expected.items()}
+    tools.get_sensor_curve(local["start"], local["end"])
+    tools.ask_handler("What happened then?", local["start"], local["end"])
+    logged = [e for e in tools.journal if e.get("tool") in ("get_sensor_curve", "ask_handler")][-2:]
+    bounds = (expected["start"], expected["end"])
+    assert (logged[0]["arguments"]["start"], logged[0]["arguments"]["end"]) == bounds
+    assert (logged[1]["result"]["asked_start"], logged[1]["result"]["asked_end"]) == bounds
