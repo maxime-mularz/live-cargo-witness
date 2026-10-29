@@ -146,3 +146,69 @@ def test_accepted_intervals_are_stored_in_utc_whatever_offset_the_model_used():
     body = tools.draft_notification("carrier")["body"]
     for interval in utc.values():
         assert f"{parse_ts(interval['start']):%H:%M}–{parse_ts(interval['end']):%H:%M} UTC" in body
+
+
+def test_odd_interval_values_never_crash_the_submission():
+    # Review of the UTC fix: a null or extra interval key raised after the verifier, losing every claim.
+    tools, _, claims, _ = scripted_run(folder_of("explained_by_handler"))
+    tools.stage = "investigation"
+    deviations = [dict(c, interval=dict(c["interval"], note="stopover")) for c in claims if c["kind"] == "deviation"]
+    deviations[0] = dict(deviations[0], interval={"start": None, "end": "n/a"})
+    report = tools.write_case_file(deviations)
+    assert [r["id"] for r in report["rejected"]] == [deviations[0]["id"]]
+    assert sorted(report["accepted"]) == sorted(c["id"] for c in deviations[1:])
+
+
+def test_claims_accepted_with_an_offset_are_accepted_again_when_the_record_is_written(tmp_path):
+    # Review of the UTC fix: normalising after the verifier changed the dates write_case re-checks.
+    from datetime import timedelta, timezone
+
+    from lcw.dossier import parse_ts
+
+    folder = folder_of("explained_by_handler")
+    tools, pre, claims, _ = scripted_run(folder)
+    shift = timezone(timedelta(hours=12))
+    shifted = []
+    for claim in claims:
+        claim = dict(claim, evidence=[dict(e) for e in claim["evidence"]])
+        if claim["kind"] == "deviation":
+            claim["interval"] = {k: parse_ts(v).astimezone(shift).isoformat() for k, v in claim["interval"].items()}
+            for item in claim["evidence"]:
+                if item["type"] == "curve_segment":
+                    for key in ("start", "end"):
+                        item[key] = parse_ts(item[key]).astimezone(shift).isoformat()
+        shifted.append(claim)
+    tools.accepted = []
+    for stage, kind in (("pre_departure", "pre_departure"), ("investigation", "deviation")):
+        tools.stage = stage
+        assert tools.write_case_file([c for c in shifted if c["kind"] == kind])["rejected"] == []
+    write_case(tmp_path / "case", tools.dossier, tools.rules, tools.accepted, tools.observations, pre, tools.journal)
+    assert verify_case(tmp_path / "case") == []
+
+
+def test_a_local_date_in_a_statement_is_refused_when_submitted_not_when_the_record_is_written():
+    # The record is in UTC: 01:15+12:00 on the 4th is 13:15 UTC on the 3rd. A statement giving the 4th
+    # used to pass at submission (raw date) and then sink the whole record at write_case.
+    from datetime import timedelta, timezone
+
+    from lcw.dossier import parse_ts
+
+    tools, _, claims, _ = scripted_run(folder_of("explained_by_handler"))
+    tools.stage = "investigation"
+    shift = timezone(timedelta(hours=12))
+    dated = []
+    for claim in (c for c in claims if c["kind"] == "deviation"):
+        claim = dict(claim, evidence=[dict(e) for e in claim["evidence"]])
+        claim["interval"] = {k: parse_ts(v).astimezone(shift).isoformat() for k, v in claim["interval"].items()}
+        for item in claim["evidence"]:
+            if item["type"] == "curve_segment":
+                for key in ("start", "end"):
+                    item[key] = parse_ts(item[key]).astimezone(shift).isoformat()
+        claim["statement"] = f"On {claim['interval']['start'][:10]}, " + claim["statement"]
+        dated.append(claim)
+    if all(c["interval"]["start"][:10] == parse_ts(c["interval"]["start"]).strftime("%Y-%m-%d") for c in dated):
+        pytest.skip("no deviation crosses midnight under this offset")
+    report = tools.write_case_file(dated)
+    crossing = [c["id"] for c in dated
+                if c["interval"]["start"][:10] != parse_ts(c["interval"]["start"]).strftime("%Y-%m-%d")]
+    assert {r["id"] for r in report["rejected"]} >= set(crossing)

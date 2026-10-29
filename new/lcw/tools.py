@@ -116,16 +116,30 @@ TOOL_SCHEMAS = [
 
 
 
+def _utc(value):
+    """``value`` as canonical UTC (``...Z``) when it is a timestamp; anything else is returned as is,
+    for the verifier to judge."""
+    if not isinstance(value, str):
+        return value
+    try:
+        return format_ts(parse_ts(value))
+    except (ValueError, OverflowError):
+        return value
+
+
 def _in_utc(claim: dict) -> dict:
-    """Copy of an accepted claim with its interval and curve segments written in UTC (``...Z``).
-    The verifier accepts any ISO offset; the record, the drafts and the journal print HH:MM UTC
-    from these strings, so 18:15+05:00 must be stored as 13:15Z, never printed as 18:15 UTC."""
+    """Copy of a submitted claim with the start/end of its interval and curve segments in UTC.
+    The record, the drafts and the journal print HH:MM UTC from these strings, so 18:15+05:00 must
+    become 13:15Z before the verifier checks it (dates included), never be printed as 18:15 UTC."""
     claim = dict(claim)
     if isinstance(claim.get("interval"), dict):
-        claim["interval"] = {k: format_ts(parse_ts(v)) for k, v in claim["interval"].items()}
-    claim["evidence"] = [dict(item, start=format_ts(parse_ts(item["start"])), end=format_ts(parse_ts(item["end"])))
-                         if item.get("type") == "curve_segment" else item for item in claim.get("evidence", [])]
+        claim["interval"] = {k: _utc(v) if k in ("start", "end") else v for k, v in claim["interval"].items()}
+    if isinstance(claim.get("evidence"), list):
+        claim["evidence"] = [{k: _utc(v) if k in ("start", "end") else v for k, v in item.items()}
+                             if isinstance(item, dict) and item.get("type") == "curve_segment" else item
+                             for item in claim["evidence"]]
     return claim
+
 
 class Toolset:
     def __init__(self, dossier: Dossier, backend: str = "offline", rules=None,
@@ -324,8 +338,7 @@ class Toolset:
                 reasons.append(f"id {claim_id} was already used at stage {first_stage}: pick a new id")
             (early if reasons else to_check).append({"claim": claim, "reasons": reasons} if reasons else claim)
 
-        report = Verifier(self.dossier, self.rules, self.observations).check(to_check)
-        report["accepted"] = [_in_utc(c) for c in report["accepted"]]
+        report = Verifier(self.dossier, self.rules, self.observations).check([_in_utc(c) for c in to_check])
         rejected = early + report["rejected"]
         accepted_ids = {c["id"] for c in report["accepted"]}
         self.accepted = [c for c in self.accepted if c["id"] not in accepted_ids]
