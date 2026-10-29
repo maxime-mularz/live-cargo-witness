@@ -119,3 +119,13 @@ def test_french_basis_keeps_every_line_of_the_english_basis(tmp_path):
         for quoted in re.findall("“(.*?)”", (case / "pv.md").read_text(encoding="utf-8")):
             assert f"« {quoted} »" in french
     assert {"voice_note", "handler_answer", "inspection_window"} <= kinds_seen
+
+
+def test_a_basis_line_that_cannot_be_rebuilt_in_french_is_kept_in_english():
+    # Review of 2026-10-29: a handler answer id with a space ("H 1") vanished from pv.fr.md.
+    from lcw.casefile import _basis_fr
+
+    claim = {"evidence": [{"type": "handler_answer", "id": "H 1"}],
+             "basis": ['Ground handler answer H 1: "ok"']}
+    lines = _basis_fr(claim)
+    assert len(lines) == 1 and 'Ground handler answer H 1: "ok"' in lines[0] and "anglais" in lines[0]

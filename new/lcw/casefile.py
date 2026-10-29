@@ -232,6 +232,8 @@ def _basis_fr(claim: dict) -> list[str]:
             line = _quoted_basis_fr(kind, item.get("id"), claim.get("basis", []))
             if line:
                 basis.append(line)
+    if len(basis) != len(claim.get("basis", [])):  # a line not rebuilt in French is kept, never dropped
+        return [f"(en anglais) {line}" for line in claim.get("basis", [])]
     return basis
 
 
