@@ -118,3 +118,31 @@ def test_no_drafts_folder_without_a_draft(tmp_path):
     tools, pre, claims = accepted_tools()
     write_case(tmp_path / "case", tools.dossier, tools.rules, claims, tools.observations, pre, tools.journal)
     assert not (tmp_path / "case" / "drafts").exists()
+
+
+def test_accepted_intervals_are_stored_in_utc_whatever_offset_the_model_used():
+    # Review of 2026-10-29: 18:15+05:00 passed the verifier and was printed "18:15 UTC" (it is 13:15 UTC).
+    from datetime import timedelta, timezone
+
+    from lcw.dossier import parse_ts
+
+    tools, _, claims, _ = scripted_run(folder_of("explained_by_handler"))
+    tools.stage = "investigation"
+    deviations = [dict(c, interval=dict(c["interval"]), evidence=[dict(e) for e in c["evidence"]])
+                  for c in claims if c["kind"] == "deviation"]
+    utc = {c["id"]: dict(c["interval"]) for c in deviations}
+    shift = timezone(timedelta(hours=5))
+    for claim in deviations:
+        for item in [claim["interval"]] + [e for e in claim["evidence"] if e["type"] == "curve_segment"]:
+            for key in ("start", "end"):
+                item[key] = parse_ts(item[key]).astimezone(shift).isoformat()
+    assert tools.write_case_file(deviations)["rejected"] == []
+    for claim in tools.accepted:
+        if claim["id"] in utc:
+            expected = {k: parse_ts(v).strftime("%Y-%m-%dT%H:%M:%SZ") for k, v in utc[claim["id"]].items()}
+            assert claim["interval"] == expected
+            segments = [e for e in claim["evidence"] if e["type"] == "curve_segment"]
+            assert segments and all(e["start"].endswith("Z") and e["end"].endswith("Z") for e in segments)
+    body = tools.draft_notification("carrier")["body"]
+    for interval in utc.values():
+        assert f"{parse_ts(interval['start']):%H:%M}–{parse_ts(interval['end']):%H:%M} UTC" in body

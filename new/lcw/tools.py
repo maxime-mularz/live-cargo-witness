@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 
 from . import models
 from .deviations import detect, values_in
-from .dossier import Dossier, load_json, parse_ts
+from .dossier import Dossier, format_ts, load_json, parse_ts
 from .drafts import RECIPIENTS, render_draft
 from .env import redact
 from .phases import segment
@@ -114,6 +114,18 @@ TOOL_SCHEMAS = [
          "claims": {"type": "array", "items": CLAIM_ITEM}}}},
 ]
 
+
+
+def _in_utc(claim: dict) -> dict:
+    """Copy of an accepted claim with its interval and curve segments written in UTC (``...Z``).
+    The verifier accepts any ISO offset; the record, the drafts and the journal print HH:MM UTC
+    from these strings, so 18:15+05:00 must be stored as 13:15Z, never printed as 18:15 UTC."""
+    claim = dict(claim)
+    if isinstance(claim.get("interval"), dict):
+        claim["interval"] = {k: format_ts(parse_ts(v)) for k, v in claim["interval"].items()}
+    claim["evidence"] = [dict(item, start=format_ts(parse_ts(item["start"])), end=format_ts(parse_ts(item["end"])))
+                         if item.get("type") == "curve_segment" else item for item in claim.get("evidence", [])]
+    return claim
 
 class Toolset:
     def __init__(self, dossier: Dossier, backend: str = "offline", rules=None,
@@ -313,6 +325,7 @@ class Toolset:
             (early if reasons else to_check).append({"claim": claim, "reasons": reasons} if reasons else claim)
 
         report = Verifier(self.dossier, self.rules, self.observations).check(to_check)
+        report["accepted"] = [_in_utc(c) for c in report["accepted"]]
         rejected = early + report["rejected"]
         accepted_ids = {c["id"] for c in report["accepted"]}
         self.accepted = [c for c in self.accepted if c["id"] not in accepted_ids]
