@@ -2,7 +2,10 @@
 
 ``write_case`` writes a self-contained folder:
 
-    pv.md            the record, in English (French optional), with three signature lines
+    pv.md            the record, in English (the reference), with three signature lines
+    pv.fr.md         the same record in French, rendered deterministically from pv.json by
+                     ``render_markdown_fr`` (fixed labels, rule titles from ``title_fr``; the
+                     verified statements stay in English, quoted); the English version prevails
     pv.json          the same content, structured
     journal.json     every tool call of the run, with the model behind it
     journal.html     the same journal as a self-contained page (EF-13)
@@ -17,6 +20,7 @@ must be covered by a verified claim (``missing_claims``).
 
 from __future__ import annotations
 
+import re
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
@@ -170,6 +174,122 @@ def render_markdown(pv: dict) -> str:
     return "\n".join(lines)
 
 
+# French version (pv.fr.md). Rendered from pv.json alone with fixed labels: no model translates
+# anything, and the only values it shows are the ones pv.json holds. Model text (the verified
+# statements) and dossier text (notes, answers, inspection reasons) stay in English, quoted.
+STATUS_LABEL_FR = {
+    "explained_compliant": "Expliqué, conforme",
+    "explained_rule_exceeded": "Expliqué, règle dépassée",
+    "false_positive_dismissed": "Faux positif, écarté",
+    "indeterminate": "Indéterminé",
+}
+PRE_STATUS_LABEL_FR = {"violated": "non respectée", "satisfied": "respectée"}
+DECISION_FR = {"go": "GO", "block": "BLOQUÉ"}
+SIGNATORIES_FR = {"Shipper": "Expéditeur", "Carrier": "Transporteur", "Ground handler": "Agent d'escale"}
+_NOTE_EN = re.compile(r"Convoy note (?P<id>\S+) \((?P<time>\d\d:\d\d) UTC(?P<tr>, transcribed)?\): "
+                      r"\u201c(?P<text>.*)\u201d", re.DOTALL)
+_ANSWER_EN = re.compile(r"Ground handler answer (?P<id>\S+)(?P<tr> \(transcribed\))?: \u201c(?P<text>.*)\u201d",
+                        re.DOTALL)
+_WINDOW_EN = re.compile(r"Declared inspection (?P<id>\S+) \((?P<start>\d\d:\d\d)–(?P<end>\d\d:\d\d) UTC\): "
+                        r"(?P<text>.*)", re.DOTALL)
+
+
+def _quoted_basis_fr(kind: str, item_id: str, basis_en: list[str]) -> str | None:
+    """French line for a piece of evidence whose text is English (a convoy note, a handler answer,
+    an inspection reason): taken from the English basis line of the same id, text kept verbatim."""
+    patterns = {"voice_note": _NOTE_EN, "handler_answer": _ANSWER_EN, "inspection_window": _WINDOW_EN}
+    for line in basis_en:
+        match = patterns[kind].fullmatch(line)
+        if not match or match["id"] != item_id:
+            continue
+        if kind == "voice_note":
+            how = ", transcrite" if match["tr"] else ""
+            return f"Note du convoyeur {item_id} ({match['time']} UTC{how}), en anglais : « {match['text']} »"
+        if kind == "handler_answer":
+            how = " (transcrite)" if match["tr"] else ""
+            return f"Réponse de l'agent d'escale {item_id}{how}, en anglais : « {match['text']} »"
+        return (f"Inspection déclarée {item_id} ({match['start']}–{match['end']} UTC), motif en anglais : "
+                f"« {match['text']} »")
+    return None
+
+
+def _basis_fr(claim: dict) -> list[str]:
+    """French counterpart of ``_basis``, rebuilt from the claim's evidence and English basis."""
+    basis = []
+    for item in claim.get("evidence", []):
+        kind = item.get("type")
+        if kind == "curve_segment":
+            basis.append(f"Courbe du capteur, {item['series']}, {item['start'][11:16]}–{item['end'][11:16]} UTC")
+        elif kind == "dossier_field":
+            basis.append(f"Dossier d'entrée : {item['path']}")
+        elif kind == "document_field":
+            basis.append(f"{item['document']} : {item['field']} (tel que lu)")
+        elif kind == "crate_feature":
+            basis.append(f"{item['photo']} : {item['feature']} (tel que segmenté)")
+        elif kind in ("voice_note", "handler_answer", "inspection_window"):
+            line = _quoted_basis_fr(kind, item.get("id"), claim.get("basis", []))
+            if line:
+                basis.append(line)
+    return basis
+
+
+def _statement_fr(claim: dict) -> str:
+    return f"Énoncé vérifié (anglais) : « {claim['statement']} »"
+
+
+def render_markdown_fr(pv: dict) -> str:
+    """French version of the record, from ``pv.json`` alone. Deterministic; the English ``pv.md``
+    prevails."""
+    decision = pv["pre_departure"]["decision"]
+    lines = [f"# Procès-verbal de remise partagé — {pv['dossier_id']}", ""]
+    if pv["synthetic"]:
+        lines += ["> **SYNTHETIC** — dossier fictif généré pour les tests. Ce n'est pas une expédition réelle.", ""]
+    lines += [
+        "> Version française produite automatiquement à partir de `pv.json`, sans traduction par un modèle. "
+        "Les énoncés vérifiés et les textes du dossier sont reproduits en anglais, mot pour mot. "
+        "En cas de divergence, la version anglaise (`pv.md`) fait foi.",
+        "",
+        f"- Lettre de transport aérien : {pv['awb_number'] or 'non lue'}",
+        f"- Itinéraire : {pv['route']}",
+        f"- Procès-verbal créé le : {pv['created_at']}",
+        f"- Décision avant départ : **{DECISION_FR.get(decision, decision)}**",
+        "",
+        "## Contrôles avant départ",
+        "",
+    ]
+    pre = [c for c in pv["claims"] if c["kind"] == "pre_departure"]
+    if pre:
+        lines += ["| Règle | Résultat | Énoncé | Fondé sur |", "| --- | --- | --- | --- |"]
+        lines += [f"| {c['rule']} | {PRE_STATUS_LABEL_FR.get(c['status'], c['status'])} | {_statement_fr(c)} | "
+                  f"{'<br>'.join(_basis_fr(c))} |" for c in pre]
+    else:
+        lines.append("Aucun contrôle avant départ enregistré.")
+    lines += ["", "## Écarts constatés à l'investigation", ""]
+    deviations = [c for c in pv["claims"] if c["kind"] == "deviation"]
+    if deviations:
+        lines += ["| Règle | Intervalle | Statut | Énoncé | Fondé sur |", "| --- | --- | --- | --- | --- |"]
+        for c in deviations:
+            interval = f"{c['interval']['start'][11:16]}–{c['interval']['end'][11:16]} UTC"
+            lines.append(f"| {c['rule']} | {interval} | {STATUS_LABEL_FR[c['status']]} | {_statement_fr(c)} | "
+                         f"{'<br>'.join(_basis_fr(c))} |")
+    else:
+        lines.append("Aucun écart enregistré.")
+    if pv["unresolved_rules"]:
+        lines += ["", f"Règles non appliquées (seuil indisponible) : {', '.join(pv['unresolved_rules'])}."]
+    lines += ["", "## Règles citées", ""]
+    lines += [f"- {r['id']} — {r.get('title_fr') or r['title']} (source, en anglais : {r['source']})"
+              for r in pv["rules_cited"]]
+    lines += ["", "## Signatures", "",
+              "Ce procès-verbal a été préparé par un agent d'IA et contrôlé par un vérificateur non IA. "
+              "Il n'est valable qu'après signature par les trois parties ci-dessous.", ""]
+    lines += [f"- {SIGNATORIES_FR[who]} : nom ____________________  date ____________  signature ____________"
+              for who in SIGNATORIES]
+    lines += ["", "Intégrité : `manifest.json` liste le SHA-256 de chaque fichier de ce procès-verbal ; son champ "
+              "`root` est le SHA-256 de cette liste. Publier ou signer cette racine rend toute modification "
+              "ultérieure détectable par tous.", ""]
+    return "\n".join(lines)
+
+
 def write_case(case_dir: Path | str, dossier: Dossier, rules: dict[str, Rule], claims: list[dict],
                observations: dict, pre_departure: dict, journal: list[dict],
                unresolved_rules: list[str] | None = None) -> dict:
@@ -217,7 +337,7 @@ def write_case(case_dir: Path | str, dossier: Dossier, rules: dict[str, Rule], c
                           "violated_rules": pre_departure.get("violated_rules", [])},
         "claims": [dict(c, basis=_basis(c, dossier, observations)) for c in claims],
         "unresolved_rules": unresolved_rules or [],
-        "rules_cited": [{"id": r, "title": rules[r].title,
+        "rules_cited": [{"id": r, "title": rules[r].title, "title_fr": rules[r].title_fr,
                          "source": rules[r].source.get("note") or rules[r].source.get("kind")}
                         for r in cited],
         "signatures": [{"party": who, "name": None, "date": None, "signed": False}
@@ -226,6 +346,7 @@ def write_case(case_dir: Path | str, dossier: Dossier, rules: dict[str, Rule], c
     }
     write_json(case_dir / "pv.json", pv)
     (case_dir / "pv.md").write_text(render_markdown(pv), encoding="utf-8")
+    (case_dir / "pv.fr.md").write_text(render_markdown_fr(pv), encoding="utf-8")
     write_json(case_dir / "journal.json", journal)
     (case_dir / "journal.html").write_text(render_journal(pv, journal), encoding="utf-8")
 

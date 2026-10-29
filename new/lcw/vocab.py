@@ -51,6 +51,13 @@ FORBIDDEN_STEMS = (
     ("fièvre", r"fi[èe]vre\w*"),
     ("traitement", r"trait[ée]ment\w*"),
     ("bien-être", r"bien[- ][êe]tre"),
+    # French equivalents of English stems the list above missed ("infection", "euthanasie" and
+    # "maladie" are already caught by "infect", "euthan" and "malad").
+    ("plaie", r"plaie\w*"),
+    ("mourir", r"mour(ir|ant\w*|ra\w*|ut|urent)|meur(s|t|ent)"),
+    ("détresse", r"d[ée]tresse\w*"),
+    ("fiévreux", r"fi[ée]vreu\w*"),
+    ("véto", r"v[ée]tos?"),
 )
 
 _PATTERNS = [(label, re.compile(r"(?<![\w-])(?:" + stem + r")(?![\w-])", re.IGNORECASE))
