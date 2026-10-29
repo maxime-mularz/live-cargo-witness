@@ -215,3 +215,40 @@ def test_satisfied_crate_rule_must_cite_every_crate():
              "statement": "Every crate carries the label.",
              "evidence": [{"type": "crate_feature", "photo": first, "feature": "live_animals_label"}]}
     assert any("cite every crate" in r for r in reasons(tools, claim))
+
+
+MALFORMED = {
+    "evidence a string": {"evidence": "abc"},
+    "evidence a dict": {"evidence": {"type": "curve_segment"}},
+    "evidence items not objects": {"evidence": [1, "a", None]},
+    "evidence a number": {"evidence": 5},
+    "interval a list": {"interval": ["2026-10-03T13:15:00Z", "2026-10-03T13:40:00Z"]},
+    "rule a list": {"rule": ["R07"]},
+    "segment start null": "segment_start_none",
+    "segment far in the future with an offset": "segment_overflow",
+}
+
+
+@pytest.mark.parametrize("case", sorted(MALFORMED))
+def test_a_malformed_claim_is_rejected_with_a_reason_and_never_crashes_the_batch(handler_case, case):
+    # Reviews of 2026-10-29: these raised inside the verifier, losing every claim of the submission.
+    tools, claims = handler_case
+    deviations = [c for c in claims if c["kind"] == "deviation"]
+    bad = copy.deepcopy(deviations[0])
+    change = MALFORMED[case]
+    if change == "segment_start_none":
+        next(e for e in bad["evidence"] if e["type"] == "curve_segment")["start"] = None
+    elif change == "segment_overflow":
+        next(e for e in bad["evidence"] if e["type"] == "curve_segment")["start"] = "9999-12-31T23:00:00-05:00"
+    else:
+        bad.update(change)
+    report = verifier_for(tools).check([bad, *deviations[1:]])
+    assert [r["claim"] for r in report["rejected"]] == [bad]
+    assert all(isinstance(r, str) and r for r in report["rejected"][0]["reasons"])
+    assert len(report["accepted"]) == len(deviations) - 1
+
+
+def test_a_claim_that_is_not_an_object_is_rejected(handler_case):
+    tools, claims = handler_case
+    report = verifier_for(tools).check(["C1", None])
+    assert len(report["rejected"]) == 2 and report["accepted"] == []

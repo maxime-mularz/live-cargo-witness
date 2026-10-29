@@ -106,12 +106,36 @@ class Verifier:
     def check(self, claims: list[dict]) -> dict:
         accepted, rejected = [], []
         for claim in claims:
-            reasons = self.check_claim(claim)
+            try:
+                reasons = self.check_claim(claim)
+            except (TypeError, AttributeError, KeyError, ValueError, OverflowError) as error:
+                # Odd model output must never crash the batch, and is never accepted: it is rejected.
+                reasons = [f"malformed claim, could not be checked ({type(error).__name__})"]
             (rejected if reasons else accepted).append(
                 {"claim": claim, "reasons": reasons} if reasons else claim)
         return {"accepted": accepted, "rejected": rejected}
 
+    @staticmethod
+    def _shape(claim) -> list[str]:
+        """Structural problems that would make the checks below meaningless."""
+        if not isinstance(claim, dict):
+            return ["a claim must be a JSON object"]
+        if not isinstance(claim.get("rule", ""), str):
+            return ["rule must be a rule id such as \"R07\""]
+        evidence = claim.get("evidence")
+        if evidence is not None and not (isinstance(evidence, list) and all(isinstance(e, dict) for e in evidence)):
+            return ["evidence must be a list of objects"]
+        if claim.get("interval") is not None and not isinstance(claim["interval"], dict):
+            return ["interval must be an object {start, end}"]
+        segments = [e for e in evidence or [] if e.get("type") == "curve_segment"]
+        if any(not isinstance(e.get(k), str) for e in segments for k in ("start", "end")):
+            return ["curve_segment needs valid start and end"]
+        return []
+
     def check_claim(self, claim: dict) -> list[str]:
+        shape = self._shape(claim)
+        if shape:
+            return shape
         reasons: list[str] = []
         rule = self.rules.get(claim.get("rule", ""))
         if rule is None:
@@ -158,7 +182,7 @@ class Verifier:
                 return "no sensor curve in this dossier"
             try:
                 start, end = parse_ts(item["start"]), parse_ts(item["end"])
-            except (KeyError, ValueError):
+            except (KeyError, ValueError, OverflowError):
                 return "curve_segment needs valid start and end"
             rows = [r for r in self.curve if start <= parse_ts(r["timestamp"]) <= end]
             if not rows:
@@ -253,7 +277,7 @@ class Verifier:
         interval = claim.get("interval") or {}
         try:
             first, last = parse_ts(interval["start"]), parse_ts(interval["end"])
-        except (KeyError, ValueError, AttributeError):
+        except (KeyError, ValueError, TypeError, AttributeError, OverflowError):
             return [*reasons, "deviation claim needs an interval"]
         if last < first:
             return [*reasons, "interval ends before it starts"]
