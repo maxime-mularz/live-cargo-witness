@@ -61,7 +61,9 @@ Built offline (no network needed, fully tested):
 - `lcw/phases.py` — flight phase segmentation from declared hours (EF-08, fallback mode).
 - `lcw/deviations.py` — deterministic deviation detection on a curve (EF-09).
 - `lcw/verifier.py` — non-AI verifier (EF-14).
-- `lcw/casefile.py`, `lcw/hashing.py` — shared handover record (PV) + SHA-256 manifest (EF-15/16).
+- `lcw/casefile.py`, `lcw/hashing.py` — shared handover record (PV) + SHA-256 manifest (EF-15/16):
+  `pv.md` (English, the reference), `pv.fr.md` (French, rendered deterministically from `pv.json`,
+  verified statements kept in English and quoted), `pv.json`, journal, pieces, `manifest.json`.
 - `lcw/drafts.py` — notification drafts from verified claims only, written to the case folder, never sent.
 - `lcw/journal_page.py` — self-contained investigation journal page, written in every case (EF-13).
 - `lcw/agent.py`, `lcw/prompts.py` — the two-stage loop (pre-departure, investigation) and its prompts.
@@ -142,5 +144,5 @@ Lint config lives in `pyproject.toml` (ruff, line length 120). Never silence a r
 
 ## Priorities if time runs short (cut in this order)
 
-1. French version of the PV  2. `draft_notification`  3. rules R09–R10  4. rule R06.
+1. French version of the PV (built: `pv.fr.md`; drop its call site in `casefile.write_case` to cut)  2. `draft_notification`  3. rules R09–R10  4. rule R06.
 Scenario 3 (false positive dismissed) is never cut.

@@ -16,7 +16,7 @@ matching assertion there.
 | You change | Also update | Enforced by |
 | --- | --- | --- |
 | A tool (name, arguments) | `TOOL_SCHEMAS`, `Toolset` method, `MODEL_FOR_TOOL`, `agent.STAGE_TOOLS`, the stage prompt in `prompts.py`, the tools table in `CLAUDE.md`, `journal_page._summary`, `tests/fake_model.py` | `test_tool_names_agree_everywhere`, `test_every_tool_takes_a_reason` |
-| A deviation status | `lcw.STATUSES`, `CLAIM_ITEM` enum, `casefile.STATUS_LABEL`, `journal_page.STATUS_LABEL`, verifier `_check_deviation`, `prompts.INVESTIGATION`, `bench/FORMAT.md`, `synth.py`, `score.py` | `test_statuses_agree_everywhere` |
+| A deviation status | `lcw.STATUSES`, `CLAIM_ITEM` enum, `casefile.STATUS_LABEL`, `casefile.STATUS_LABEL_FR`, `journal_page.STATUS_LABEL`, verifier `_check_deviation`, `prompts.INVESTIGATION`, `bench/FORMAT.md`, `synth.py`, `score.py` | `test_statuses_agree_everywhere` |
 | An evidence type | `EVIDENCE_ITEM` enum, `Verifier._resolve`, the verifier docstring, `prompts.COMMON`, `casefile._basis` | `test_evidence_types_agree_everywhere` |
 | A sensor series | `EVIDENCE_ITEM.series`, `verifier.SERIES`, `synth.py` CSV columns, `FORMAT.md` sensor log, rule cards | `test_evidence_types_agree_everywhere`, `test_rule_cards_match_the_code` |
 | A rule card (new check type, threshold path) | `predeparture.evaluate_rule` or `deviations.detect`, `verifier.DOSSIER_PREFIXES`, `rules/README.md`, the prompt's rule range (R01–R06 / R07–R10), `synth.py` defects, `FORMAT.md` deviations | `test_rule_cards_match_the_code`, `test_rules.py` |
@@ -24,7 +24,7 @@ matching assertion there.
 | A document or crate field | `synth.py` truth files, `FORMAT.md`, `models.read_document_image` / `segment_crate_image` docstrings, `scripts/test_ca02.py` | `test_format_md_documents_every_dossier_field` |
 | A module or a script | `CLAUDE.md` (layout / built list / commands), `README.md` if user-facing | `test_claude_md_lists_every_module_and_script` |
 | The result format (`results/<id>.json`) | `agent.run`, `runner.py`, `score.py`, `tests/helpers.scripted_run` | `test_agent.py`, `test_score.py` |
-| The record (pv.json / pv.md, drafts/) | `casefile.write_case`, `render_markdown`, `journal_page.render`, `drafts.render_draft`, `verify_case`, `scripts/verify_case.py` | `test_casefile.py`, `test_drafts.py` |
+| The record (pv.json / pv.md / pv.fr.md, drafts/) | `casefile.write_case`, `render_markdown`, `render_markdown_fr` (+ `STATUS_LABEL_FR`, `_basis_fr` when `_basis` changes), `journal_page.render`, `drafts.render_draft`, `verify_case`, `scripts/verify_case.py` | `test_casefile.py`, `test_casefile_fr.py`, `test_drafts.py` |
 | A metric or acceptance criterion (CA-xx) | `score.py`, `README.md` Evaluation, the CDC in Claude Docs (tell Maxime; do not edit his doc without asking) | `test_score.py` |
 | The bench generator | regenerate with `generate_bench.py` (never hand-edit `expected.json`), then run the suite | `test_synth.py` |
 | What is built / left | `CLAUDE.md` "What is built and what is left", `README.md` status table | review |
@@ -44,7 +44,9 @@ matching assertion there.
   "in-flight deviation": nothing happens in flight), "ground handler", "convoy attendant".
 - **Times.** ISO 8601 UTC with `Z` in data; `HH:MM UTC` in statements; Paris time only in human
   planning notes.
-- **Languages.** Code, data, prompts, record: English. The French PV is optional (first cut).
+- **Languages.** Code, data, prompts, record: English. The French PV (`pv.fr.md`) is rendered
+  from `pv.json` with fixed labels, never by a model; model and dossier text stay in English,
+  quoted; the English `pv.md` prevails. It is the first thing to cut if time runs short.
 
 ## Procedure
 

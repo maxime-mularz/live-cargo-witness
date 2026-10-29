@@ -12,3 +12,28 @@ def test_inflected_forms():
     assert "mort" in find_forbidden("des bêtes mortes")
     assert "blessure" in find_forbidden("blessures constatées")
     assert find_forbidden("The temperature exceeded the declared range") == []
+
+
+def test_french_equivalents_of_every_english_stem():
+    # One French phrase per English concept the list forbids: the list must catch it in French too.
+    french = {
+        "une plaie sur l'animal": "wound",
+        "les plaies visibles": "wound",
+        "l'animal pourrait mourir": "die",
+        "un veau meurt pendant le vol": "die",
+        "deux bêtes meurent": "die",
+        "un animal mourant": "die",
+        "un signe de détresse": "distress",
+        "un animal fiévreux": "fever",
+        "appeler le véto": "veterinary",
+        "une infection": "infection",
+        "l'euthanasie": "euthanasia",
+        "une maladie": "disease",
+    }
+    for phrase, concept in french.items():
+        assert find_forbidden(phrase), f"{phrase!r} ({concept}) is not caught"
+
+
+def test_french_record_words_are_not_forbidden():
+    assert find_forbidden("Écart expliqué, règle dépassée ; faux positif écarté ; indéterminé. "
+                          "Expéditeur, transporteur, agent d'escale. La version anglaise fait foi.") == []

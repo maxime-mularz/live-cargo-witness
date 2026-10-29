@@ -42,6 +42,7 @@ def test_statuses_agree_everywhere():
     assert set(STATUSES) <= claim_statuses
     assert claim_statuses - set(STATUSES) == {"violated", "satisfied"}
     assert set(casefile.STATUS_LABEL) == set(STATUSES)
+    assert set(casefile.STATUS_LABEL_FR) == set(STATUSES)
     assert claim_statuses <= set(journal_page.STATUS_LABEL)
     for status in STATUSES:
         assert status in FORMAT_MD, f"status {status} not documented in FORMAT.md"

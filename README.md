@@ -36,7 +36,9 @@ voice notes and the ground crew's answers.
    the evidence. Whether a ground handler's answer actually explains a deviation stays the agent's
    judgement: the answer is quoted verbatim in the record, for the three signatories to see.
    Every file of the record is listed with its SHA-256; publishing or signing the root hash makes
-   any later change detectable.
+   any later change detectable. The record is written in English (`pv.md`, the reference) and in
+   French (`pv.fr.md`), the French one rendered from the same data with fixed labels — no model
+   translates it, and the verified statements stay in English, quoted.
 
 ## Meta models
 
@@ -61,7 +63,7 @@ Everything under [`new/`](new/) was written during the event (see the dated git 
 | Development bench: 20 fictitious dossiers + expected outcomes | `new/bench/dev/` | done |
 | Flight phases, deviation detection | `new/lcw/phases.py`, `new/lcw/deviations.py` | done |
 | Non-AI verifier | `new/lcw/verifier.py` | done |
-| Handover record + SHA-256 manifest | `new/lcw/casefile.py` | done |
+| Handover record (English `pv.md`, French `pv.fr.md`) + SHA-256 manifest | `new/lcw/casefile.py` | done |
 | Bench scoring | `new/lcw/score.py` | done |
 | Two-stage agent loop and prompts | `new/lcw/agent.py`, `new/lcw/prompts.py` | done, tested with a scripted client |
 | Investigation journal page | `new/lcw/journal_page.py` | done |
