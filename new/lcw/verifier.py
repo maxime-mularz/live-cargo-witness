@@ -125,8 +125,6 @@ class Verifier:
         evidence = claim.get("evidence")
         if evidence is not None and not (isinstance(evidence, list) and all(isinstance(e, dict) for e in evidence)):
             return ["evidence must be a list of objects"]
-        if claim.get("interval") is not None and not isinstance(claim["interval"], dict):
-            return ["interval must be an object {start, end}"]
         segments = [e for e in evidence or [] if e.get("type") == "curve_segment"]
         if any(not isinstance(e.get(k), str) for e in segments for k in ("start", "end")):
             return ["curve_segment needs valid start and end"]

@@ -281,3 +281,23 @@ def test_the_utc_note_is_added_only_to_rejections_about_dates_or_times():
     claim["status"] = "violated"  # wrong status for a deviation: rejected, but not about dates or times
     reasons = tools.write_case_file([claim])["rejected"][0]["reasons"]
     assert not any("recorded in UTC" in r for r in reasons)
+
+
+@pytest.mark.parametrize("evidence", [5, True, "abc", {"type": "curve_segment"}, [1, None]])
+def test_malformed_evidence_never_crashes_a_submission_through_the_tool(evidence):
+    # Review of the verifier hardening: evidence 5 or True still raised in the UTC note of write_case_file.
+    tools, _, claims, _ = scripted_run(folder_of("explained_by_handler"))
+    tools.stage = "investigation"
+    deviations = [c for c in claims if c["kind"] == "deviation"]
+    bad = dict(deviations[0], id="CX", evidence=evidence)
+    report = tools.write_case_file([bad, *deviations[1:]])
+    assert [r["id"] for r in report["rejected"]] == ["CX"]
+    assert sorted(report["accepted"]) == sorted(c["id"] for c in deviations[1:])
+
+
+def test_a_pre_departure_claim_with_an_odd_interval_is_judged_as_before():
+    # The interval is never read on a pre-departure claim: a stray "" must not cost the model a turn.
+    tools, _, claims, _ = scripted_run(folder_of("defect_R02"))
+    tools.stage = "pre_departure"
+    pre = [dict(c, interval="") for c in claims if c["kind"] == "pre_departure"]
+    assert pre and tools.write_case_file(pre)["rejected"] == []

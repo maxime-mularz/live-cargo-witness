@@ -134,8 +134,11 @@ def _utc(value):
 def _rewritten(sent: dict, checked: dict) -> list[str]:
     """``sent -> checked`` for each start/end the UTC rewrite changed, so a rejection can be explained
     in terms of what the model sent."""
+    def evidence(claim: dict) -> list:
+        return claim.get("evidence") if isinstance(claim.get("evidence"), list) else []
+
     pairs = [(sent.get("interval"), checked.get("interval"))]
-    pairs += list(zip(sent.get("evidence") or [], checked.get("evidence") or [], strict=False))
+    pairs += list(zip(evidence(sent), evidence(checked), strict=False))
     changes = []
     for before, after in pairs:
         if isinstance(before, dict) and isinstance(after, dict):
