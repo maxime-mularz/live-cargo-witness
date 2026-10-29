@@ -114,3 +114,9 @@ def test_claude_md_lists_every_module_and_script():
         if script.name.startswith("_"):
             continue
         assert script.name in CLAUDE_MD, f"{script.name} missing from CLAUDE.md commands"
+
+
+def test_prompts_never_show_a_number_word_the_verifier_rejects():
+    # Live DEMO-01 kept writing "three documents", copied from the prompt, then had it rejected.
+    for name in ("COMMON", "PRE_DEPARTURE", "INVESTIGATION"):
+        assert verifier.NUMBER_WORDS.findall(getattr(prompts, name)) == [], name
