@@ -6,6 +6,7 @@
     pv.json          the same content, structured
     journal.json     every tool call of the run, with the model behind it
     journal.html     the same journal as a self-contained page (EF-13)
+    drafts/          notification drafts, if the agent asked for any (never sent; lcw.drafts)
     pieces/          copies of the dossier pieces the record relies on
     manifest.json    SHA-256 of every file above + the record's root hash
 
@@ -23,6 +24,7 @@ from pathlib import Path
 
 from .deviations import detect
 from .dossier import Dossier, parse_ts, write_json
+from .drafts import write_drafts
 from .hashing import canonical_json, sha256_bytes, sha256_file
 from .journal_page import render as render_journal
 from .phases import segment
@@ -172,9 +174,10 @@ def render_markdown(pv: dict) -> str:
 
 def write_case(case_dir: Path | str, dossier: Dossier, rules: dict[str, Rule], claims: list[dict],
                observations: dict, pre_departure: dict, journal: list[dict],
-               unresolved_rules: list[str] | None = None) -> dict:
+               unresolved_rules: list[str] | None = None, drafts: list[str] | None = None) -> dict:
     """Write the case folder and return its manifest. Raises ``RejectedClaims`` if any claim
-    fails verification."""
+    fails verification. ``drafts``: recipients the agent drafted a notification for; each draft
+    is re-rendered from the verified claims into ``drafts/<recipient>.md`` (lcw.drafts)."""
     report = Verifier(dossier, rules, observations).check(claims)
     if report["rejected"]:
         raise RejectedClaims(report["rejected"])
@@ -228,6 +231,7 @@ def write_case(case_dir: Path | str, dossier: Dossier, rules: dict[str, Rule], c
     (case_dir / "pv.md").write_text(render_markdown(pv), encoding="utf-8")
     write_json(case_dir / "journal.json", journal)
     (case_dir / "journal.html").write_text(render_journal(pv, journal), encoding="utf-8")
+    write_drafts(case_dir, drafts or [], dossier.id, dossier.synthetic, claims, rules)
 
     files = {}
     for path in sorted(p for p in case_dir.rglob("*") if p.is_file()):

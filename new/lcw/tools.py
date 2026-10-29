@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from . import models
 from .deviations import detect, values_in
 from .dossier import Dossier, load_json, parse_ts
+from .drafts import RECIPIENTS, render_draft
 from .env import redact
 from .phases import segment
 from .rules import load_rules
@@ -100,11 +101,11 @@ TOOL_SCHEMAS = [
          "reason": REASON,
          "question": {"type": "string"}, "start": {"type": "string"}, "end": {"type": "string"}}}},
     {"name": "draft_notification",
-     "description": "Draft (never send) a message to one of the three signatories.",
-     "parameters": {"type": "object", "required": ["recipient", "summary"], "properties": {
+     "description": "Draft (never send) a message to one of the three signatories. The body is a "
+                    "fixed template filled with the claims the verifier has accepted so far.",
+     "parameters": {"type": "object", "required": ["recipient"], "properties": {
          "reason": REASON,
-         "recipient": {"type": "string", "enum": ["shipper", "carrier", "handler"]},
-         "summary": {"type": "string"}}}},
+         "recipient": {"type": "string", "enum": list(RECIPIENTS)}}}},
     {"name": "write_case_file",
      "description": "Submit claims for the shared handover record. Claims are checked by the "
                     "non-AI verifier; rejected claims come back with reasons.",
@@ -275,8 +276,10 @@ class Toolset:
         entry["sensor_curve_available"] = bool(record.get("sensor_curve"))
         return entry
 
-    def draft_notification(self, recipient: str, summary: str) -> dict:
-        draft = {"recipient": recipient, "status": "draft — not sent", "body": summary}
+    def draft_notification(self, recipient: str) -> dict:
+        """Fill the draft template with verified facts only (lcw.drafts); no model text."""
+        body = render_draft(recipient, self.dossier.id, self.dossier.synthetic, self.accepted, self.rules)
+        draft = {"recipient": recipient, "status": "draft — not sent", "body": body}
         self.drafts.append(draft)
         self._log("draft_notification", {"recipient": recipient}, draft)
         return draft

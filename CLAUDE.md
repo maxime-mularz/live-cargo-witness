@@ -62,6 +62,7 @@ Built offline (no network needed, fully tested):
 - `lcw/deviations.py` — deterministic deviation detection on a curve (EF-09).
 - `lcw/verifier.py` — non-AI verifier (EF-14).
 - `lcw/casefile.py`, `lcw/hashing.py` — shared handover record (PV) + SHA-256 manifest (EF-15/16).
+- `lcw/drafts.py` — notification drafts from verified claims only, written to the case folder, never sent.
 - `lcw/journal_page.py` — self-contained investigation journal page, written in every case (EF-13).
 - `lcw/agent.py`, `lcw/prompts.py` — the two-stage loop (pre-departure, investigation) and its prompts.
 - `lcw/runner.py` — runs the agent on a dossier or a bench, writes results, cases and raw runs.
@@ -89,7 +90,7 @@ Left for the machine that holds the API keys (with Claude Code or Muse Code):
 | `get_sensor_curve` | Tive API or CSV export | `sensor/curve.csv` |
 | `lookup_rule` | `lcw.rules` | same |
 | `ask_handler` | recorded answer + Voice Transcribe | `voice/handler_answers.json` |
-| `draft_notification` (optional) | template | same |
+| `draft_notification` (optional) | `lcw.drafts` template filled with verified claims only (no model text) | same |
 | `write_case_file` | `lcw.casefile` after `lcw.verifier` | same |
 
 The offline stand-ins exist for tests and scoring plumbing only. The demo and the submitted scores
